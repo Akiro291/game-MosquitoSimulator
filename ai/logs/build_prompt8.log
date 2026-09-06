@@ -1,0 +1,40 @@
+Using bundled DotNet SDK version: 10.0 win-x64
+Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" MosquitoSimulatorEditor Win64 Development -project="d:\UnrealProjects\MosquitoSimulator 5.8\MosquitoSimulator.uproject" -WaitMutex
+Log file: C:\Users\Hazvi\AppData\Local\UnrealBuildTool\Log.txt
+Determining max actions to execute in parallel (6 physical cores, 12 logical cores)
+  Executing up to 6 processes, one per physical core
+UbaServer - Listening on 0.0.0.0:1345
+Invalidating makefile for MosquitoSimulatorEditor (source file added)
+Available x64 toolchains (1):
+ * C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231
+    (Family=14.51.36231, FamilyRank=2, Version=14.51.36256, HostArchitecture=x64, ReleaseChannel=Latest, Architecture=x64)
+Visual Studio compiler version 14.51.36256 is newer than latest preferred version 14.50.35717. Please use caution as this compiler has not been heavily tested
+UHT compiled-in object format Default
+Building MosquitoSimulatorEditor...
+===== Toolchain Information =====
+Using ISPC compiler (E:\UE_5.8\Engine\Source\ThirdParty\Intel\ISPC\bin\Windows\ispc.exe)
+  Intel(r) Implicit SPMD Program Compiler (Intel(r) ISPC), 1.24.0 (build commit  @ 20250404, LLVM 18.1.2) 
+Using Visual Studio 14.51.36256 toolchain (C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231) and Windows 10.0.22621.0 SDK (C:\Program Files (x86)\Windows Kits\10).
+Warning: Visual Studio compiler 14.51.36256 is not a preferred version
+=================================
+Using Unreal Build Accelerator local executor to run 6 action(s)
+  CPU 6 physical cores, 12 logical cores
+  Memory 31.89 GB physical, 22.6 GB/72.72 GB committed
+  UBA Storage capacity 40 GB
+[1/6] Compile [x64] DayNightSystem.cpp
+D:\UnrealProjects\MosquitoSimulator 5.8\Source\MosquitoSimulator\DayNightSystem.cpp(13,1): fatal error C1083: Cannot open include file: 'HAL/PlatformCommandLine.h': No such file or directory
+#include "HAL/PlatformCommandLine.h"
+^
+[2/6] Compile [x64] MosquitoSimulatorGameModeBase.cpp
+E:\UE_5.8\Engine\Source\Runtime\Engine\Classes\GameFramework\Character.h(798,31): warning C4996: 'APawn::GetMovementBase': GetMovementBase is deprecated. Use GetMovementBaseObject or GetMovementBaseInterfaceData instead. - Please update your code to the new API before upgrading to the next release, otherwise your project will no longer compile.
+	virtual UPrimitiveComponent* GetMovementBase() const override final { return Cast<UPrimitiveComponent>(GetMovementBaseObject()); }
+	                             ^
+[3/6] Compile [x64] Module.MosquitoSimulator.gen.cpp
+E:\UE_5.8\Engine\Source\Runtime\Engine\Classes\GameFramework\Character.h(798,31): warning C4996: 'APawn::GetMovementBase': GetMovementBase is deprecated. Use GetMovementBaseObject or GetMovementBaseInterfaceData instead. - Please update your code to the new API before upgrading to the next release, otherwise your project will no longer compile.
+	virtual UPrimitiveComponent* GetMovementBase() const override final { return Cast<UPrimitiveComponent>(GetMovementBaseObject()); }
+	                             ^
+Total time in Unreal Build Accelerator local executor: 3.35 seconds
+
+Result: Failed (OtherCompilationError)
+Total execution time: 7.55 seconds
+Trace written to file C:\Users\Hazvi\AppData\Local\UnrealBuildTool\Trace.uba with size 5.9kb
