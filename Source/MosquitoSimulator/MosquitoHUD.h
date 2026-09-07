@@ -46,6 +46,9 @@ protected:
 	/** MVP 0.2 §3/§4: Tab-purchased run-branch panel (no world pause). */
 	void DrawUpgradePanel(class AMosquitoCharacter* Mosquito);
 
+	/** MVP 0.2 §3.4: species section shown automatically over the DEAD overlay. */
+	void DrawDeathPanel(class AMosquitoCharacter* Mosquito);
+
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	float BarWidth = 140.f;
 

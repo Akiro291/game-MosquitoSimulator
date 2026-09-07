@@ -206,6 +206,7 @@ void AMosquitoCharacter::BeginPlay()
 	// MVP 0.2 §4: cache the persistent save + capture the canonical accel BEFORE
 	// any upgrade multiplier is ever applied (FlightSpeed itself stays untouched).
 	GameSave = UMosquitoSimulatorGameInstance::Get(this);
+	BaseMaxHealth = MaxHealth;
 	if (const UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		BaseMaxAcceleration = Movement->MaxAcceleration;
@@ -224,6 +225,16 @@ void AMosquitoCharacter::BeginPlay()
 		GameSave->BuyRunUpgrade(ERunBranch::MuscularPropulsion);
 		UE_LOG(LogTemp, Display, TEXT("[Progression] Seeded run XP=%.0f"), SeedXP);
 	}
+
+	// Dev helpers for the plan §4 death-loop headless check: -SeedScore=420 puts
+	// lifetime score in, -KillMe drives the Die->Respawn accounting deterministically.
+	int32 SeedScore = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("SeedScore="), SeedScore) && GameSave)
+	{
+		GameSave->AddLifetimeScore(SeedScore);
+		UE_LOG(LogTemp, Display, TEXT("[Progression] Seeded lifetime score=%d"), SeedScore);
+	}
+	bDevKillSelf = FParse::Param(FCommandLine::Get(), TEXT("KILLME"));
 
 	// Prompt 14: start the procedural buzz + prepare the bite one-shot.
 	InitAudio();
@@ -267,7 +278,7 @@ void AMosquitoCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 
 void AMosquitoCharacter::MoveForward(const FInputActionValue& Value)
 {
-	if (bTrappedByWeb)
+	if (bDead || bTrappedByWeb)
 	{
 		return; // MVP 0.2 §1: flight keys do NOT free the mosquito - only struggling does
 	}
@@ -281,7 +292,7 @@ void AMosquitoCharacter::MoveForward(const FInputActionValue& Value)
 
 void AMosquitoCharacter::MoveRight(const FInputActionValue& Value)
 {
-	if (bTrappedByWeb)
+	if (bDead || bTrappedByWeb)
 	{
 		return;
 	}
@@ -295,7 +306,7 @@ void AMosquitoCharacter::MoveRight(const FInputActionValue& Value)
 
 void AMosquitoCharacter::MoveUp(const FInputActionValue& Value)
 {
-	if (bTrappedByWeb)
+	if (bDead || bTrappedByWeb)
 	{
 		return;
 	}
@@ -309,6 +320,10 @@ void AMosquitoCharacter::MoveUp(const FInputActionValue& Value)
 
 void AMosquitoCharacter::Look(const FInputActionValue& Value)
 {
+	if (bDead)
+	{
+		return; // keep the death-window camera frozen, like the old DisableInput path
+	}
 	const FVector2D LookAxis = Value.Get<FVector2D>();
 	AddControllerYawInput(LookAxis.X);
 	AddControllerPitchInput(LookAxis.Y);
@@ -316,6 +331,10 @@ void AMosquitoCharacter::Look(const FInputActionValue& Value)
 
 void AMosquitoCharacter::OnBitePressed()
 {
+	if (bDead)
+	{
+		return;
+	}
 	if (bTrappedByWeb)
 	{
 		// MVP 0.2 §1: the ONLY bite allowed while stuck is the counter-bite on the
@@ -425,6 +444,10 @@ void AMosquitoCharacter::EscapeWeb()
 
 void AMosquitoCharacter::OnToggleUpgradePanel(const FInputActionValue& Value)
 {
+	if (bDead)
+	{
+		return; // the dead body shows the death panel, not the run panel
+	}
 	bUpgradePanelOpen = !bUpgradePanelOpen;
 	UE_LOG(LogTemp, Log, TEXT("[Progression] Upgrade panel %s (world keeps running)"),
 		bUpgradePanelOpen ? TEXT("OPEN") : TEXT("closed"));
@@ -439,23 +462,55 @@ static void BuyRunBranch(UMosquitoSimulatorGameInstance* GameSave, bool bPanelOp
 	GameSave->BuyRunUpgrade(Branch);
 }
 
+/**
+ * MVP 0.2 §3.4/§5: ONE key row, two contexts - while dead the death-screen panel
+ * offers the SPECIES layer with the same 1-3 keys (run layer resets with the corpse).
+ */
+static void BuyDeathPanelSpecies(AMosquitoCharacter* Self, UMosquitoSimulatorGameInstance* GameSave, ESpeciesBranch Branch)
+{
+	if (Self->IsUpgradePanelOpen() || !GameSave)
+	{
+		return; // the run panel has priority while it's open
+	}
+	GameSave->BuySpeciesBranchLevel(Branch);
+}
+
 void AMosquitoCharacter::OnBuyBranchWingControl(const FInputActionValue& Value)
 {
+	if (bDead)
+	{
+		BuyDeathPanelSpecies(this, GameSave, ESpeciesBranch::BloodEfficiency);
+		return;
+	}
 	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::WingControl);
 }
 
 void AMosquitoCharacter::OnBuyBranchPropulsion(const FInputActionValue& Value)
 {
+	if (bDead)
+	{
+		BuyDeathPanelSpecies(this, GameSave, ESpeciesBranch::WebResistantAdhesion);
+		return;
+	}
 	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::MuscularPropulsion);
 }
 
 void AMosquitoCharacter::OnBuyBranchWebEscape(const FInputActionValue& Value)
 {
+	if (bDead)
+	{
+		BuyDeathPanelSpecies(this, GameSave, ESpeciesBranch::Exoskeleton);
+		return;
+	}
 	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::WebEscapeReflexes);
 }
 
 void AMosquitoCharacter::OnBuyBranchMetabolism(const FInputActionValue& Value)
 {
+	if (bDead)
+	{
+		return; // only 3 species branches
+	}
 	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::Metabolism);
 }
 
@@ -524,6 +579,18 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 	// Prompt 14: buzz loudness/pitch follow speed & wing state (runs even
 	// while dead so the buzz fades out instead of stopping abruptly).
 	UpdateBuzz(DeltaTime);
+
+	// MVP 0.2 §5 dev (-KillMe): deterministic death for the headless death-loop proof.
+	if (bDevKillSelf && !bDead)
+	{
+		DevKillTimer += DeltaTime;
+		if (DevKillTimer >= 2.f)
+		{
+			bDevKillSelf = false;
+			Die();
+			return;
+		}
+	}
 
 	// Prompt 12: handle respawn timer while dead.
 	if (bDead)
@@ -729,11 +796,19 @@ void AMosquitoCharacter::Die()
 	}
 	bDead = true;
 	DeathTimer = 0.f;
+	bUpgradePanelOpen = false;
 
-	// Prompt 12: disable input.
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	// MVP 0.2 §4/§5: death accounting in the Die->Respawn loop. Species points are
+	// awarded at the START of the death window so the death-screen panel (plan §3.4,
+	// purchases only there) can already spend them. Input deliberately stays ON for
+	// keys 1-3 (species buys) - flight/bite are gated per-handler on bDead instead
+	// (plan: edits to MosquitoCharacter are only gates/runners).
+	if (GameSave)
 	{
-		PC->DisableInput(PC);
+		GameSave->MarkDeath();
+		++GameSave->Generations;
+		GameSave->AwardSpeciesPoints();
+		GameSave->SaveNow();
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Mosquito] Died! Health=%.1f Wings=%.1f — respawning in %.1f sec"),
@@ -755,11 +830,15 @@ void AMosquitoCharacter::Respawn()
 		GameSave->ResetRunProgress();
 	}
 
-	// Prompt 12: restore all stats.
+	// MVP 0.2 §4 (owner decision, soft death punishment): Health/Wings/Energy full,
+	// Blood/Hunger NOT reset to ideal - and Exoskeleton raises the new mosquito's
+	// starting MaxHealth with the inherited species bonus.
+	const float ExoHp = GameSave ? GameSave->GetExoskeletonHpBonus() : 0.f;
+	MaxHealth = BaseMaxHealth + ExoHp;
 	CurrentHealth = MaxHealth;
-	CurrentBlood = MaxBlood;
+	CurrentBlood = 20.f;
 	CurrentEnergy = MaxEnergy;
-	CurrentHunger = 0.f;
+	CurrentHunger = 70.f;
 	WingCondition = MaxWingCondition;
 	bLoggedExhausted = false;
 	bLoggedStarving = false;
@@ -1058,13 +1137,16 @@ void AMosquitoCharacter::CompleteBite()
 		BiteCount, Gained, CurrentBlood, MaxBlood);
 }
 
-void AMosquitoCharacter::AddScore(int32 Points)
+void AMosquitoCharacter::AddScore(int32 Points, bool bCountsAsChase)
 {
 	if (Points <= 0)
 	{
 		return;
 	}
-	CurrentScore = Points;
+	if (bCountsAsChase)
+	{
+		CurrentScore = Points; // HUD "Last chase" chip - only chase payouts
+	}
 	TotalScore += Points;
 
 	// MVP 0.2 §4 owner rule: Score CONVERTS to XP and feeds lifetime records
@@ -1073,6 +1155,10 @@ void AMosquitoCharacter::AddScore(int32 Points)
 	{
 		GameSave->AddXP(static_cast<float>(Points));
 		GameSave->AddLifetimeScore(Points);
+		if (bCountsAsChase)
+		{
+			GameSave->SetBestChaseScoreIfHigher(Points);
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Mosquito] +%d points (total: %d)"), Points, TotalScore);

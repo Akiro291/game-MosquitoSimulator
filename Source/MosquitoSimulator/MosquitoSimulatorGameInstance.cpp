@@ -195,6 +195,7 @@ bool UMosquitoSimulatorGameInstance::BuySpeciesBranchLevel(ESpeciesBranch Branch
 	bDirty = true;
 	UE_LOG(LogTemp, Display, TEXT("[Progression] Species bought %s -> L%d (%d point(s) left)"),
 		*MosquitoProgression::GetSpeciesBranchName(Branch), *Level, UnspentSpeciesPoints);
+	SaveNow(); // plan §2: persist immediately on species purchase
 	return true;
 }
 

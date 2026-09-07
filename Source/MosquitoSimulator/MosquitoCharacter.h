@@ -124,7 +124,9 @@ public:
 	int32 GetTotalScore() const { return TotalScore; }
 
 	UFUNCTION(BlueprintCallable, Category = "Mosquito|Score")
-	void AddScore(int32 Points);
+	/** MVP 0.2 §4: forwards to the persistent save. bCountsAsChase=false for non-chase
+	    rewards (spider kill) so the chase record stays honest. */
+	void AddScore(int32 Points, bool bCountsAsChase = true);
 
 	// --- Prompt 12: Death & Respawn ---
 	UFUNCTION(BlueprintCallable, Category = "Mosquito")
@@ -266,8 +268,15 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UMosquitoSimulatorGameInstance> GameSave = nullptr;
 
+	// Dev flags (plan §4 Verification headless): -SeedScore=N, -KillMe
+	bool bDevKillSelf = false;
+	float DevKillTimer = 0.f;
+
 	/** Base for WingControl upgrades - captured BEFORE multipliers ever touch it. */
 	float BaseMaxAcceleration = 800.f;
+
+	/** Base for the Exoskeleton species bonus (same capture-before-modify rule). */
+	float BaseMaxHealth = 100.f;
 
 	bool bUpgradePanelOpen = false;
 

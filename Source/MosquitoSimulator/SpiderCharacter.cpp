@@ -131,7 +131,8 @@ void ASpiderCharacter::DieAndReward(AMosquitoCharacter* Mosquito)
 	if (Mosquito)
 	{
 		// MVP 0.2 §4: AddScore now forwards to Score -> XP + lifetime (a single pipe).
-		Mosquito->AddScore(RewardScore);
+		// bCountsAsChase=false: a kill is not a chase record.
+		Mosquito->AddScore(RewardScore, false);
 		if (Mosquito->IsTrapped())
 		{
 			Mosquito->EscapeWeb(); // the web vanishes with the spider
