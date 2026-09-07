@@ -14,6 +14,11 @@ AMosquitoSimulatorGameModeBase::AMosquitoSimulatorGameModeBase()
 	DefaultPawnClass = AMosquitoCharacter::StaticClass();
 	PlayerControllerClass = AMosquitoSimulatorPlayerController::StaticClass();
 
+	// MVP 0.2 §0: the persistent GameInstance is wired via GameInstanceClass under
+	// [/Script/EngineSettings.GameMapsSettings] in DefaultEngine.ini. In UE 5.8 the
+	// engine creates the GameInstance from that key at UGameEngine::Init/PIE startup
+	// (before any GameMode exists); AGameModeBase no longer has a GameInstanceClass field.
+
 	// QA MVP fix: the GameMode pushes its HUDClass to the player via
 	// ClientSetHUD() (AGameModeBase.cpp:892). It defaulted to the EMPTY AHUD,
 	// so the debug HUD never appeared in PIE even though DrawHUD was correct.
@@ -30,6 +35,10 @@ AMosquitoSimulatorGameModeBase::AMosquitoSimulatorGameModeBase()
 void AMosquitoSimulatorGameModeBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// MVP 0.2 §0: proof that the persistent GameInstance from the INI is live.
+	UE_LOG(LogTemp, Display, TEXT("[GameMode] GameInstance=%s"),
+		GetGameInstance() ? *GetGameInstance()->GetClass()->GetName() : TEXT("NONE"));
 
 	// Temporary: provide a testable blockout world until the real level is built.
 	if (bSpawnBlockoutWorld && GetWorld() && GetWorld()->IsGameWorld())
