@@ -49,11 +49,10 @@
   понизить до Verbose при чистке логов.
 - Headless `-nullrhi` может зависнуть — всегда с таймаутом + kill.
 
-### NEXT (MVP 0.2 — по решению владельца, план согласован 2026-09-07)
-План-источник: `.kilo/plans/1788765577251-mvp-0-2-plan.md` (фазы 0–6).
-P1: паук + паутина (trapped/struggle, killable, lunge в зоне сети); прогрессия — биологическая двухслойная:
-**Score конвертируется в XP** (run-уровни → level-up points на Tab-панель), lifetime Score — витрина рекордов
-+ источник species-очков (наследование между поколениями, config-сейв в GameInstance). Никакой generic RPG-статистики.
+### NEXT (MVP 0.2 — ФАЗЫ 0–6 РЕАЛИЗОВАНЫ, headless-гейт пройден 2026-09-07)
+План-источник: `.kilo/plans/1788765577251-mvp-0-2-plan.md` (фазы 0–6) — всё в дереве (коммиты Ph0–Ph6, headless-логи в ai/logs).
+**Score конвертируется в XP** (run-уровни → level-up points на Tab-панель; без generic RPG), lifetime Score — рекорды + species-очки (наследование, `UMosquitoSimulatorGameInstance` + `Saved/Config/MosquitoSave.ini`). Паук: trapped/struggle lunge killable — в игре.
+Осталось: PIE-гейт владельца (чек-лист: ai/PROGRESS.md «Следующий шаг»). Дальше — только явное «ок» (кандидаты 0.3: mating/partner, второй паук/патрули).
 P2: настоящий уровень вместо блокаута.
 P3: ночной режим людей (хуки `IsNight()` готовы); эскалация Chase. P4: Mosquito Sense (ПКМ-заглушка).
 P5: UMG-HUD/меню; геймпад — ОТЛОЖЕНО владельцем (0.2 остаётся на Canvas HUD). P6: брюшко от крови; чистка логов.
