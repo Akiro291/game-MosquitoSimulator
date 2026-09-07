@@ -8,9 +8,11 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Misc/CommandLine.h"
+#include "GameFramework/GameModeBase.h"
 #include "MosquitoAudio.h"
 #include "MosquitoCharacter.h"
 #include "MosquitoPaint.h"
+#include "MosquitoSimulatorGameModeBase.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -127,6 +129,16 @@ bool ASpiderCharacter::TakeBite()
 void ASpiderCharacter::DieAndReward(AMosquitoCharacter* Mosquito)
 {
 	UE_LOG(LogTemp, Warning, TEXT("[Spider] Died +reward: web cleared, %d Score/XP paid"), RewardScore);
+
+	// PIE-FIX #3: hand the kill to the GameMode - the web rebuilds ONLY after its
+	// strict SpiderRespawnDelay (no instant re-spawn, no double spawn ever).
+	if (AGameModeBase* GM = GetWorld() ? GetWorld()->GetAuthGameMode() : nullptr)
+	{
+		if (AMosquitoSimulatorGameModeBase* MosquitoGM = Cast<AMosquitoSimulatorGameModeBase>(GM))
+		{
+			MosquitoGM->NotifySpiderDied();
+		}
+	}
 
 	if (Mosquito)
 	{

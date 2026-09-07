@@ -195,8 +195,8 @@ protected:
 	void DetectNearbyHumans();
 	/** MVP 0.2 §1: spider proximity (same query pattern, for the counter-bite). */
 	void DetectNearbySpiders();
-	void ResolvePawnPenetration(float DeltaTime);
-	void LogHumanCollision(const TCHAR* Type, const FVector& HumanCenter, const FVector& Normal, float Penetration);
+	/** Collision v5b - PIE fix: separates from a human with a WORLD-only manual sweep. */
+	void ResolvePawnPenetration();
 	void StickToLandedHuman();
 	void LandOn(AHumanCharacter* Human);
 	void TakeOff();
@@ -225,9 +225,6 @@ protected:
 	/** Overlap query runs only while the nearest human is closer than this (cm). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito|Collision")
 	float PawnPenetrationQueryRadius = 150.f;
-
-	/** TEMP: throttle for [ Mosquito::HumanCollision ] diagnostics (seconds). */
-	float HumanCollisionDiagTimer = 0.f;
 
 	// --- Stat tick tuning ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")

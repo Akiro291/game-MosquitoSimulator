@@ -8,6 +8,7 @@
 #include "MosquitoWorldBlockout.h"
 #include "MosquitoHUD.h"
 #include "SpiderCharacter.h"
+#include "Misc/CommandLine.h"
 
 AMosquitoSimulatorGameModeBase::AMosquitoSimulatorGameModeBase()
 {
@@ -81,20 +82,63 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 	// MVP 0.2 §1: one spider on one web in the NW quadrant - transient, like humans.
 	if (bSpawnSpider && GetWorld() && GetWorld()->IsGameWorld())
 	{
-		FActorSpawnParameters SpiderParams;
-		SpiderParams.ObjectFlags |= RF_Transient;
-		SpiderParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		ASpiderCharacter* Spider = GetWorld()->SpawnActor<ASpiderCharacter>(
-			ASpiderCharacter::StaticClass(), FTransform(SpiderWebLocation), SpiderParams);
-		if (!Spider)
+		// Dev override for headless cooldown verification: -SpiderRespawn=N.
+		float SpiderRespawnOverride = 0.f;
+		if (FParse::Value(FCommandLine::Get(), TEXT("SpiderRespawn="), SpiderRespawnOverride) && SpiderRespawnOverride > 0.f)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Spider] Spawn FAILED at (%.0f, %.0f, %.0f)"),
-				SpiderWebLocation.X, SpiderWebLocation.Y, SpiderWebLocation.Z);
+			SpiderRespawnDelay = SpiderRespawnOverride;
 		}
+		SpawnSpiderActor();
 	}
 
 	if (DefaultMap != NAME_None)
 	{
 		GetWorld()->ServerTravel(DefaultMap.ToString());
 	}
+}
+
+void AMosquitoSimulatorGameModeBase::SpawnSpiderActor()
+{
+	FActorSpawnParameters SpiderParams;
+	SpiderParams.ObjectFlags |= RF_Transient;
+	SpiderParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ASpiderCharacter* Spider = GetWorld()->SpawnActor<ASpiderCharacter>(
+		ASpiderCharacter::StaticClass(), FTransform(SpiderWebLocation), SpiderParams);
+	if (!Spider)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Spider] Spawn FAILED at (%.0f, %.0f, %.0f)"),
+			SpiderWebLocation.X, SpiderWebLocation.Y, SpiderWebLocation.Z);
+		return;
+	}
+	ActiveSpider = Spider;
+}
+
+void AMosquitoSimulatorGameModeBase::NotifySpiderDied()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+	// PIE-FIX #3 (owner report): kills used to leave the web empty forever within a
+	// session, or the spider came back at an arbitrary moment on world restarts.
+	// Now: exactly one timer, strict SpiderRespawnDelay, no double-arming.
+	ActiveSpider = nullptr;
+	if (SpiderRespawnTimerHandle.IsValid())
+	{
+		return; // a respawn is already scheduled
+	}
+	GetWorldTimerManager().SetTimer(SpiderRespawnTimerHandle, this,
+		&AMosquitoSimulatorGameModeBase::RespawnSpider, SpiderRespawnDelay, false);
+	UE_LOG(LogTemp, Display, TEXT("[Spider] Cooldown %.0f s until the web is rebuilt"), SpiderRespawnDelay);
+}
+
+void AMosquitoSimulatorGameModeBase::RespawnSpider()
+{
+	SpiderRespawnTimerHandle.Invalidate();
+	if (ActiveSpider.IsValid())
+	{
+		return; // a spider is somehow alive already - never double-spawn
+	}
+	UE_LOG(LogTemp, Display, TEXT("[Spider] Cooldown over - rebuilding the web"));
+	SpawnSpiderActor();
 }

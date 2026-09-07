@@ -36,7 +36,7 @@
 - **Комар** (`MosquitoCharacter.cpp` ctor): object type = MosquitoBody, response на `ECC_Pawn` = **Block** → собственный swept-move движка (CMC → SafeMoveUpdatedComponent → ResolvePenetration) останавливает/скользит комара по капсуле человека штатным механизмом; односторонне — движется только комар. WorldStatic/WorldDynamic = Block (из Pawn-профиля + DefaultResponse канала).
 - **Human** (`HumanCharacter.cpp` ctor): **runtime-override** response на MosquitoBody = **Ignore** → движение человека никогда не блокируется/де-пенетрируется/толкается комаром (лечит «подбрасывание»: human — object type ECC_Pawn с Block на Pawn-канал, его CMC выталкивал его из капсулы комара). Human-vs-human (ECC_Pawn) коллизии не изменены.
 - **`ResolvePawnPenetration(DeltaTime)`** (Tick, только `!bIsLanded`): закрывает случай «человек прошёл над зависшим комаром» — комар выталкивается аналитической математикой capsule-vs-capsule по минимальному вектору разделения (только позиция, velocity не тронут, sweep=true от мира). В v4 направление push было инвертировано (тянуло к центру — протаскивало сквозь тело) — исправлено.
-- **Диагностика (TEMP):** `[ Mosquito::HumanCollision ]` type=BLOCKED/DEPENETRATED + loc/normal/penetration/velocity, throttle 0.5 с (`LogHumanCollision`) — удалить после PIE-верификации владельцем.
+- **Диагностика:** `[Mosquito::HumanCollision]` TEMP-спам **УДАЛЁН** (PIE-верифицировано). PIE-fix #2: депенетрация делала `SetActorLocation(bSweep=true)` — свип блокировался ВСЕМИ каналами, включая ECC_Pawn т.е. тем самым человеком, с которым уже было перекрытие → отказ движения → один и тот же penetration ~3 см логировался вечно при проводящем мимо/преследующем человеке. Теперь: аналитический capsule-vs-capsule тест + собственный свип ТОЛЬКО по WorldStatic/WorldDynamic + `SetActorLocation(bSweep=false)` (мировые стены по-прежнему уважаются, человек — то, от чего уходим — не может «запретить» расцепление).
 - Посадка/укус: отдельный путь `StickToLandedHuman`, депенетрация скипается при `bIsLanded`.
 **Возвращать двустороннюю Block-схему или Overlap-варианты запрещено.** История: Block (трамплин) → Overlap+ручная коррекция (инвертированный push + human всё ещё блокировал Pawn-канал) → **v5/v5b односторонняя (текущая)**.
 
@@ -53,6 +53,12 @@
 План-источник: `.kilo/plans/1788765577251-mvp-0-2-plan.md` (фазы 0–6) — всё в дереве (коммиты Ph0–Ph6, headless-логи в ai/logs).
 **Score конвертируется в XP** (run-уровни → level-up points на Tab-панель; без generic RPG), lifetime Score — рекорды + species-очки (наследование, `UMosquitoSimulatorGameInstance` + `Saved/Config/MosquitoSave.ini`). Паук: trapped/struggle lunge killable — в игре.
 Осталось: PIE-гейт владельца (чек-лист: ai/PROGRESS.md «Следующий шаг»). Дальше — только явное «ок» (кандидаты 0.3: mating/partner, второй паук/патрули).
+
+**PIE-фиксы после гейта 0.2 (2026-09-07, коммит "PIE fixes after owner test"):**
+1) Exoskeleton/species бонусы применяются и ПЕРВОЙ комарице сессии (BeginPlay, не только в Respawn) — meta-progression с перезапуска. RunLevel сброс на смерти = дизайн §4 («новая комарица Level 1»).
+2) Спам [HumanCollision] DEPENETRATED — см. раздел collision выше.
+3) Убитый паук возвращает сеть строго через `SpiderRespawnDelay=45` с (GameMode-таймер, однократный арм; дев-override `-SpiderRespawn=N`).
+4) Buzz-жужжание: FIFO пред-заполняется до Play() и держит лайдхед 0.35 с — чинит «не слышно/обрывается» в PIE.
 P2: настоящий уровень вместо блокаута.
 P3: ночной режим людей (хуки `IsNight()` готовы); эскалация Chase. P4: Mosquito Sense (ПКМ-заглушка).
 P5: UMG-HUD/меню; геймпад — ОТЛОЖЕНО владельцем (0.2 остаётся на Canvas HUD). P6: брюшко от крови; чистка логов.

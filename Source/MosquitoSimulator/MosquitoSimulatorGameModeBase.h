@@ -6,6 +6,8 @@
 #include <GameFramework/GameModeBase.h>
 #include "MosquitoSimulatorGameModeBase.generated.h"
 
+class ASpiderCharacter;
+
 /**
  * Main GameMode for Mosquito Simulator.
  */
@@ -43,6 +45,20 @@ public:
 	/** Web center (1 uu = 1 cm), by TreeTrunk2 (-800, 650). */
 	UPROPERTY(EditDefaultsOnly, Category = "Level")
 	FVector SpiderWebLocation = FVector(-800.f, 650.f, 60.f);
+
+	/** PIE-FIX #3: a killed spider takes the web back only after this cooldown. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level", meta = (ClampMin = "1"))
+	float SpiderRespawnDelay = 45.f;
+
+	/** Called by ASpiderCharacter when it dies - arms the strict respawn cooldown. */
+	void NotifySpiderDied();
+
+private:
+	void SpawnSpiderActor();
+	void RespawnSpider();
+
+	TWeakObjectPtr<ASpiderCharacter> ActiveSpider;
+	FTimerHandle SpiderRespawnTimerHandle;
 
 	/** World-space spawn points (1 uu = 1 cm) for the human NPCs. */
 	UPROPERTY(EditDefaultsOnly, Category = "Level")

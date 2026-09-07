@@ -5,6 +5,8 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "CollisionQueryParams.h"
+#include "CollisionShape.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/StaticMesh.h"
@@ -213,6 +215,23 @@ void AMosquitoCharacter::BeginPlay()
 		if (!GameSave)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Mosquito] GameInstance NOT found - progression disabled"));
+		}
+	}
+
+	// PIE-FIX #1 (meta-progression): the FIRST mosquito of a reloaded session must
+	// also start with the inherited species bonuses - before this they were applied
+	// only in Respawn(), so a save-borne Exoskeleton did nothing until the first death.
+	// (BloodEfficiency/WebResistantAdhesion already apply live at their read-sites;
+	//  RunLevel resetting on death IS plan §4 design: a new mosquito starts at Level 1.)
+	if (GameSave)
+	{
+		const float ExoHp = GameSave->GetExoskeletonHpBonus();
+		if (ExoHp > 0.f)
+		{
+			MaxHealth = BaseMaxHealth + ExoHp;
+			CurrentHealth = MaxHealth;
+			UE_LOG(LogTemp, Display, TEXT("[Progression] Species inherited at spawn: Exoskeleton +%.0f HP (MaxHealth=%.0f, points=%d)"),
+				ExoHp, MaxHealth, GameSave->UnspentSpeciesPoints);
 		}
 	}
 
@@ -672,11 +691,10 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 	DetectNearbyHumans();
 	DetectNearbySpiders();
 
-	// Collision v5: keep the mosquito out of the human capsule (one-way:
-	// the human is never touched). The engine's swept move handles the
-	// mosquito flying INTO the human; this manual pass handles the human
-	// walking over a mosquito.
-	ResolvePawnPenetration(DeltaTime);
+	// Collision v5b: keep the mosquito out of the human capsule (one-way:
+	// the human is never touched). PIE-FIX #2: the separation sweep must ignore
+	// ECC_Pawn - see ResolvePawnPenetration().
+	ResolvePawnPenetration();
 
 	if (bBiting)
 	{
@@ -920,24 +938,24 @@ void AMosquitoCharacter::DetectNearbySpiders()
 	}
 }
 
-void AMosquitoCharacter::ResolvePawnPenetration(float DeltaTime)
+void AMosquitoCharacter::ResolvePawnPenetration()
 {
-	// TEMP diagnostics throttle: one [ Mosquito::HumanCollision ] entry max
-	// every 0.5 s (never per-frame spam).
-	HumanCollisionDiagTimer -= DeltaTime;
-
-	// Collision v5 - one-way coverage for the hole the engine cannot fill:
+	// Collision v5b - one-way coverage for the hole the engine cannot fill:
 	// the HUMAN ignores the mosquito's body channel, so when the human WALKS
-	// OVER a hovering mosquito nothing pushes the mosquito out on its own.
-	// Here the mosquito alone is pushed out of the human capsule along the
-	// minimal separation vector (position only - velocity, acceleration and
-	// movement mode untouched; no impulse/force/Launch on either side; the
-	// human actor is never modified). Skipped while landed so the separate
-	// StickToLandedHuman attachment path (Landing/Bite) is never disturbed.
+	// INTO a hovering mosquito nothing pushes the mosquito out on its own.
+	// The mosquito alone is separated along the minimal capsule-axis vector
+	// (position only - velocity/accel/mode untouched, no impulses, never the
+	// human). Skipped while landed (StickToLandedHuman owns the position).
 	//
-	// NOTE: when the MOSQUITO flies INTO the human, the engine itself blocks
-	// the move (the mosquito's capsule blocks ECC_Pawn) - that path needs no
-	// manual code and is reported via the BLOCKED diagnostics below.
+	// PIE-FIX #2 (owner report: "[HumanCollision] type=DEPENETRATED ~3.0 spam"):
+	// the old code separated with SetActorLocation(bSweep=true). That sweep tests
+	// ALL channels the mosquito blocks - including ECC_Pawn, i.e. the human we are
+	// ALREADY overlapped with. Initial overlap reported a hit at time 0, MoveComponent
+	// refused the delta, the penetration never resolved and the TEMP diagnostic
+	// re-logged it every throttle window while a human kept walking (chase!). The
+	// separation now uses our OWN sweep against WORLD objects only (walls/floor stay
+	// respected, the human - the very thing to escape - is excluded). The TEMP
+	// [ Mosquito::HumanCollision ] diagnostics are removed per plan (PIE-verified).
 	if (bIsLanded || bDead)
 	{
 		return;
@@ -975,66 +993,54 @@ void AMosquitoCharacter::ResolvePawnPenetration(float DeltaTime)
 
 	const float SumRadii = CapsuleRadius + HumanRadius;
 	const float Penetration = SumRadii - AxisDist;
-
-	const FVector Vel = GetVelocity();
-	const bool bMovingIntoHuman = (Vel.Size() > 20.f) &&
-		(FVector::DotProduct(Vel, (HumanCenter - MosPos).GetSafeNormal()) > 0.3f);
-
-	if (Penetration > 0.f)
-	{
-		// Minimal separation direction: AWAY from the human axis (v4 bug fix:
-		// it pushed TOWARD the center and dragged the mosquito through the
-		// body), plus the vertical component when above/below the caps.
-		FVector Away(MosPos.X - HumanCenter.X, MosPos.Y - HumanCenter.Y, 0.f);
-		if (VerticalGap > 0.f)
-		{
-			Away.Z = VerticalGap * FMath::Sign(MosPos.Z - HumanCenter.Z);
-		}
-		if (Away.IsNearlyZero())
-		{
-			// Dead center inside: push straight up until fully outside.
-			Away = FVector(0.f, 0.f,
-				(HumanCenter.Z + HumanSegHalf + HumanRadius + CapsuleRadius) - MosPos.Z + 1.f);
-		}
-		Away = Away.GetSafeNormal();
-
-		// Swept so the correction cannot shove the mosquito inside world
-		// geometry; blocked by walls, never by the human (human ignores us,
-		// we block the human only during OUR own movement).
-		const FVector NewLocation = MosPos + Away * (Penetration + 0.05f);
-		SetActorLocation(NewLocation, /*bSweep=*/true, nullptr, ETeleportType::None);
-
-		LogHumanCollision(bMovingIntoHuman ? TEXT("BLOCKED") : TEXT("DEPENETRATED"),
-			HumanCenter, Away, Penetration);
-		return;
-	}
-
-	// No penetration: report BLOCKED while the mosquito presses against the
-	// human surface (the engine's swept move holds it there every frame).
-	const float SurfaceDist = AxisDist - SumRadii;
-	if (bMovingIntoHuman && SurfaceDist < 2.f)
-	{
-		LogHumanCollision(TEXT("BLOCKED"), HumanCenter,
-			(MosPos - HumanCenter).GetSafeNormal(), 0.f);
-	}
-}
-
-void AMosquitoCharacter::LogHumanCollision(const TCHAR* Type, const FVector& HumanCenter, const FVector& Normal, float Penetration)
-{
-	if (HumanCollisionDiagTimer > 0.f)
+	if (Penetration <= 0.f)
 	{
 		return;
 	}
-	HumanCollisionDiagTimer = 0.5f;
 
-	// TEMP DIAGNOSTICS: remove after the owner's PIE verification.
-	UE_LOG(LogTemp, Log, TEXT("[ Mosquito::HumanCollision ]\ntype=%s\nmosquitoLoc=%s\nhumanLoc=%s\nnormal=%s\npenetration=%.2f\nvelocity=%s"),
-		Type,
-		*GetActorLocation().ToString(),
-		*HumanCenter.ToString(),
-		*Normal.ToString(),
-		Penetration,
-		*GetVelocity().ToString());
+	// Minimal separation direction: AWAY from the human axis (v4 bug fix:
+	// it pushed TOWARD the center and dragged the mosquito through the
+	// body), plus the vertical component when above/below the caps.
+	FVector Away(MosPos.X - HumanCenter.X, MosPos.Y - HumanCenter.Y, 0.f);
+	if (VerticalGap > 0.f)
+	{
+		Away.Z = VerticalGap * FMath::Sign(MosPos.Z - HumanCenter.Z);
+	}
+	if (Away.IsNearlyZero())
+	{
+		// Dead center inside: push straight up until fully outside.
+		Away = FVector(0.f, 0.f,
+			(HumanCenter.Z + HumanSegHalf + HumanRadius + CapsuleRadius) - MosPos.Z + 1.f);
+	}
+	Away = Away.GetSafeNormal();
+
+	const FVector DesiredLocation = MosPos + Away * (Penetration + 0.05f);
+
+	// Separate with a self-sweep against WORLD geometry only, then apply the
+	// (clamped) location without the engine sweep, so the overlapping human can
+	// never veto the correction.
+	FVector FinalLocation = DesiredLocation;
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		FCollisionObjectQueryParams WorldOnly;
+		WorldOnly.AddObjectTypesToQuery(ECC_WorldStatic);
+		WorldOnly.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(this);
+
+		FHitResult WorldHit;
+		const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
+		if (World->SweepSingleByObjectType(WorldHit, MosPos, DesiredLocation, GetActorQuat(),
+			WorldOnly, CapsuleShape, Params) && WorldHit.bBlockingHit)
+		{
+			// Stop at the world surface instead of embedding into it.
+			FinalLocation = MosPos + (DesiredLocation - MosPos) * FMath::Clamp(WorldHit.Time, 0.f, 1.f);
+		}
+	}
+
+	SetActorLocation(FinalLocation, /*bSweep=*/false, nullptr, ETeleportType::None);
 }
 
 void AMosquitoCharacter::StickToLandedHuman()
@@ -1171,9 +1177,18 @@ void AMosquitoCharacter::InitAudio()
 	BuzzWave = MosquitoAudio::MakeBuzzWave(this);
 	BiteWave = MosquitoAudio::MakeOneShotWave(this, MosquitoAudio::GenerateBite(BiteSamples));
 
-	if (BuzzAudio)
+	if (BuzzAudio && BuzzWave)
 	{
 		BuzzAudio->SetSound(BuzzWave);
+		// PIE-FIX #4 (owner report): buzz/clap sometimes silent or cutting out.
+		// Root cause for the buzz: Play() started on an EMPTY procedural FIFO - the
+		// mixer immediately pulled, got nothing and the device underran (silence or
+		// dropouts, worst during PIE hitches). Pre-fill the whole nominal duration
+		// BEFORE Play so the first pull already finds samples.
+		TArray<int16> Prefill;
+		MosquitoAudio::GenerateBuzzChunk(Prefill, BuzzPhase, BuzzTremPhase, BuzzSampleCount,
+			BuzzFreq, BuzzAmp, MosquitoAudio::SampleRate / 2); // 0.5 s = wave duration
+		MosquitoAudio::QueueSamples(BuzzWave, Prefill);
 		BuzzAudio->Play();
 	}
 	if (SfxAudio)
@@ -1181,7 +1196,7 @@ void AMosquitoCharacter::InitAudio()
 		SfxAudio->SetSound(BiteWave);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Mosquito] Procedural audio ready (buzz + bite, %d Hz mono, no assets)"), MosquitoAudio::SampleRate);
+	UE_LOG(LogTemp, Log, TEXT("[Mosquito] Procedural audio ready (buzz + bite, %d Hz mono, pre-filled, no assets)"), MosquitoAudio::SampleRate);
 }
 
 void AMosquitoCharacter::UpdateBuzz(float DeltaTime)
@@ -1203,12 +1218,15 @@ void AMosquitoCharacter::UpdateBuzz(float DeltaTime)
 	BuzzAmp = FMath::FInterpTo(BuzzAmp, TargetAmp, DeltaTime, 8.f);
 	BuzzFreq = FMath::FInterpTo(BuzzFreq, TargetFreq, DeltaTime, 6.f);
 
-	// Keep the audio FIFO topped up (~0.2 s ahead) from the game thread.
-	const int32 BufferedTargetBytes = MosquitoAudio::SampleRate * 2 / 5;
-	if (BuzzWave->GetAvailableAudioByteCount() < BufferedTargetBytes)
+	// Keep the audio FIFO topped up from the game thread. PIE-FIX #4: the old
+	// 0.2 s margin underran during PIE hitches/shader-compile stalls (buzz cut
+	// out). Refill a whole 100 ms block as soon as the buffer drops below 0.35 s
+	// of audio - the game thread only needs one healthy tick to stay ahead.
+	const int32 BufferedMinimumBytes = MosquitoAudio::SampleRate * 2 * 7 / 20; // 0.35 s
+	if (BuzzWave->GetAvailableAudioByteCount() < BufferedMinimumBytes)
 	{
 		TArray<int16> Chunk;
-		MosquitoAudio::GenerateBuzzChunk(Chunk, BuzzPhase, BuzzTremPhase, BuzzSampleCount, BuzzFreq, BuzzAmp, 2400); // 50 ms
+		MosquitoAudio::GenerateBuzzChunk(Chunk, BuzzPhase, BuzzTremPhase, BuzzSampleCount, BuzzFreq, BuzzAmp, 4800); // 100 ms
 		MosquitoAudio::QueueSamples(BuzzWave, Chunk);
 	}
 }
