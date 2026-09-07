@@ -133,6 +133,9 @@ AMosquitoCharacter::AMosquitoCharacter()
 
 	SenseAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_Sense"));
 
+	StruggleAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_Struggle"));
+	StruggleAction->ValueType = EInputActionValueType::Axis1D;
+
 	// Flight: W/S, A/D, up = Space or E, down = LeftCtrl or Q.
 	FlightContext->MapKey(MoveForwardAction, EKeys::W);
 	UInputModifierNegate* NegateBack = CreateDefaultSubobject<UInputModifierNegate>(TEXT("Negate_MoveBack"));
@@ -155,6 +158,9 @@ AMosquitoCharacter::AMosquitoCharacter()
 	// Stubs for later prompts.
 	FlightContext->MapKey(BiteAction, EKeys::LeftMouseButton);
 	FlightContext->MapKey(SenseAction, EKeys::RightMouseButton);
+
+	// MVP 0.2 §1: R = struggle in a spider web.
+	FlightContext->MapKey(StruggleAction, EKeys::R);
 }
 
 void AMosquitoCharacter::BeginPlay()
@@ -208,11 +214,17 @@ void AMosquitoCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(LookAction, ETriggerEvent::Triggered, this, &AMosquitoCharacter::Look);
 		EnhancedInput->BindAction(BiteAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnBitePressed);
 		EnhancedInput->BindAction(SenseAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnSensePressed);
+		EnhancedInput->BindAction(StruggleAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnStruggleStarted);
+		EnhancedInput->BindAction(StruggleAction, ETriggerEvent::Completed, this, &AMosquitoCharacter::OnStruggleCompleted);
 	}
 }
 
 void AMosquitoCharacter::MoveForward(const FInputActionValue& Value)
 {
+	if (bTrappedByWeb)
+	{
+		return; // MVP 0.2 §1: flight keys do NOT free the mosquito - only struggling does
+	}
 	const float AxisValue = Value.Get<float>();
 	if (Controller && AxisValue != 0.f)
 	{
@@ -223,6 +235,10 @@ void AMosquitoCharacter::MoveForward(const FInputActionValue& Value)
 
 void AMosquitoCharacter::MoveRight(const FInputActionValue& Value)
 {
+	if (bTrappedByWeb)
+	{
+		return;
+	}
 	const float AxisValue = Value.Get<float>();
 	if (Controller && AxisValue != 0.f)
 	{
@@ -233,6 +249,10 @@ void AMosquitoCharacter::MoveRight(const FInputActionValue& Value)
 
 void AMosquitoCharacter::MoveUp(const FInputActionValue& Value)
 {
+	if (bTrappedByWeb)
+	{
+		return;
+	}
 	const float AxisValue = Value.Get<float>();
 	if (Controller && AxisValue != 0.f)
 	{
@@ -250,6 +270,10 @@ void AMosquitoCharacter::Look(const FInputActionValue& Value)
 
 void AMosquitoCharacter::OnBitePressed()
 {
+	if (bTrappedByWeb)
+	{
+		return; // MVP 0.2 §1: no landing/biting while stuck in the web
+	}
 	if (bIsLanded)
 	{
 		StartBite();
@@ -276,6 +300,60 @@ void AMosquitoCharacter::OnBitePressed()
 void AMosquitoCharacter::OnSensePressed()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[Mosquito] Sense is not implemented yet (Prompt 14)"));
+}
+
+// --- MVP 0.2 §1: spider web trap & struggle ---------------------------------
+
+void AMosquitoCharacter::EnterWeb()
+{
+	if (bDead || bTrappedByWeb || HasWebRetakeImmunity())
+	{
+		return;
+	}
+	if (bIsLanded)
+	{
+		TakeOff(); // trapped and landed are mutually exclusive (plan §1)
+	}
+	bTrappedByWeb = true;
+	EscapeMeter = 1.f;
+	UE_LOG(LogTemp, Warning, TEXT("[Mosquito] TRAPPED in spider web - mash R to struggle!"));
+}
+
+void AMosquitoCharacter::Struggle()
+{
+	if (!bTrappedByWeb)
+	{
+		return;
+	}
+	EscapeMeter = FMath::Max(0.f, EscapeMeter - WebEscapePerTap);
+	if (EscapeMeter <= 0.f)
+	{
+		EscapeWeb();
+	}
+}
+
+void AMosquitoCharacter::OnStruggleStarted(const FInputActionValue& Value)
+{
+	bStruggleHeld = true;
+	Struggle();
+}
+
+void AMosquitoCharacter::OnStruggleCompleted(const FInputActionValue& Value)
+{
+	bStruggleHeld = false;
+}
+
+void AMosquitoCharacter::EscapeWeb()
+{
+	if (!bTrappedByWeb)
+	{
+		return;
+	}
+	bTrappedByWeb = false;
+	bStruggleHeld = false;
+	WebRetakeImmunityTimer = WebRetakeImmunitySeconds;
+	UE_LOG(LogTemp, Log, TEXT("[Mosquito] ESCAPED the web - fly out fast (%.1f s retake immunity)"),
+		WebRetakeImmunitySeconds);
 }
 
 void AMosquitoCharacter::SetHealth(float NewValue)
@@ -353,6 +431,31 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 			Respawn();
 		}
 		return;
+	}
+
+	// MVP 0.2 §1: web trap. No physics/impulses - velocity is zeroed every
+	// tick (same pattern as StickToLandedHuman) and the escape meter runs here.
+	if (WebRetakeImmunityTimer > 0.f)
+	{
+		WebRetakeImmunityTimer = FMath::Max(0.f, WebRetakeImmunityTimer - DeltaTime);
+	}
+	if (bTrappedByWeb)
+	{
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->Velocity = FVector::ZeroVector;
+		}
+		// Passive recovery vs. mash / gentle hold (owner decision: hold = ~0.3 of a tap).
+		float MeterDelta = WebEscapeRecoverPerSecond * DeltaTime;
+		if (bStruggleHeld)
+		{
+			MeterDelta -= WebEscapeHoldPerSecond * DeltaTime;
+		}
+		EscapeMeter = FMath::Clamp(EscapeMeter + MeterDelta, 0.f, 1.f);
+		if (EscapeMeter <= 0.f)
+		{
+			EscapeWeb();
+		}
 	}
 
 	// Prompt 12/13: light camera shake when wings are badly damaged (< 25).
@@ -517,6 +620,12 @@ void AMosquitoCharacter::Die()
 
 void AMosquitoCharacter::Respawn()
 {
+	// MVP 0.2 §1: respawn must clear the web trap BEFORE EnableInput (plan §1 edge case).
+	bTrappedByWeb = false;
+	bStruggleHeld = false;
+	EscapeMeter = 1.f;
+	WebRetakeImmunityTimer = WebRetakeImmunitySeconds;
+
 	// Prompt 12: restore all stats.
 	CurrentHealth = MaxHealth;
 	CurrentBlood = MaxBlood;

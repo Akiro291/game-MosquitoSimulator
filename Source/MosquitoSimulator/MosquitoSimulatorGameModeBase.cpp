@@ -7,6 +7,7 @@
 #include "MosquitoSimulatorPlayerController.h"
 #include "MosquitoWorldBlockout.h"
 #include "MosquitoHUD.h"
+#include "SpiderCharacter.h"
 
 AMosquitoSimulatorGameModeBase::AMosquitoSimulatorGameModeBase()
 {
@@ -75,6 +76,21 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 			ADayNightSystem::StaticClass(), FTransform::Identity, SysParams);
 		UE_LOG(LogTemp, Log, TEXT("[DayNight] System %s"),
 			DayNight ? TEXT("spawned") : TEXT("FAILED"));
+	}
+
+	// MVP 0.2 §1: one spider on one web in the NW quadrant - transient, like humans.
+	if (bSpawnSpider && GetWorld() && GetWorld()->IsGameWorld())
+	{
+		FActorSpawnParameters SpiderParams;
+		SpiderParams.ObjectFlags |= RF_Transient;
+		SpiderParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ASpiderCharacter* Spider = GetWorld()->SpawnActor<ASpiderCharacter>(
+			ASpiderCharacter::StaticClass(), FTransform(SpiderWebLocation), SpiderParams);
+		if (!Spider)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[Spider] Spawn FAILED at (%.0f, %.0f, %.0f)"),
+				SpiderWebLocation.X, SpiderWebLocation.Y, SpiderWebLocation.Z);
+		}
 	}
 
 	if (DefaultMap != NAME_None)

@@ -134,6 +134,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Mosquito")
 	bool IsDead() const { return bDead; }
 
+	// --- MVP 0.2 §1: Spider web trap & struggle ---
+	/** Called by ASpiderCharacter when the mosquito enters WebRadius. */
+	UFUNCTION(BlueprintCallable, Category = "Mosquito|Web")
+	void EnterWeb();
+
+	/** One struggle tap (public so dev headsless hooks can emulate the R key). */
+	UFUNCTION(BlueprintCallable, Category = "Mosquito|Web")
+	void Struggle();
+
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
+	bool IsTrapped() const { return bTrappedByWeb; }
+
+	/** 1.0 -> 0.0 while trapped; escape at 0. */
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
+	float GetEscapeProgress01() const { return FMath::Clamp(EscapeMeter, 0.f, 1.f); }
+
+	/** Short grace window after an escape so the web cannot instantly re-trap (P11 pattern). */
+	bool HasWebRetakeImmunity() const { return WebRetakeImmunityTimer > 0.f; }
+
 protected:
 	/** Flight input callbacks (Enhanced Input). */
 	void MoveForward(const FInputActionValue& Value);
@@ -144,6 +163,11 @@ protected:
 	/** Bite: Prompt 9 (land + bite); sense is still a stub. */
 	void OnBitePressed();
 	void OnSensePressed();
+
+	/** MVP 0.2 §1: struggle against the spider web (IA_Struggle = R). */
+	void OnStruggleStarted(const FInputActionValue& Value);
+	void OnStruggleCompleted(const FInputActionValue& Value);
+	void EscapeWeb();
 
 	// --- Prompt 9: bite & blood ---
 	void UpdateStats(float DeltaTime);
@@ -201,7 +225,27 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")
 	float ExhaustedSpeedMult = 0.5f;
 
-	// --- Bite runtime ---
+	// --- MVP 0.2 §1: web trap tuning (player-feel numbers, plan: tap -0.12,
+	// hold auto ~x0.3 of a tap/sec, passive recovery +0.05/s) ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Web")
+	float WebEscapePerTap = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Web")
+	float WebEscapeHoldPerSecond = 0.036f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Web")
+	float WebEscapeRecoverPerSecond = 0.05f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito|Web")
+	float WebRetakeImmunitySeconds = 1.f;
+
+	// --- Web trap runtime ---
+	bool bTrappedByWeb = false;
+	float EscapeMeter = 1.f;
+	bool bStruggleHeld = false;
+	float WebRetakeImmunityTimer = 0.f;
+
+	// --- Prompt 9: bite runtime ---
 	bool bIsLanded = false;
 	bool bBiting = false;
 	float BiteProgress = 0.f;
@@ -342,4 +386,7 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UInputAction> SenseAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> StruggleAction;
 };

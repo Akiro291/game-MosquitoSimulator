@@ -35,6 +35,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Level", meta = (DisplayName = "Spawn Day/Night System"))
 	bool bSpawnDayNight = true;
 
+	/** MVP 0.2 §1: auto-spawn the spider + its web in the NW quadrant (away from
+	    human spawns and PlayerStart). */
+	UPROPERTY(EditDefaultsOnly, Category = "Level", meta = (DisplayName = "Spawn Spider"))
+	bool bSpawnSpider = true;
+
+	/** Web center (1 uu = 1 cm), by TreeTrunk2 (-800, 650). */
+	UPROPERTY(EditDefaultsOnly, Category = "Level")
+	FVector SpiderWebLocation = FVector(-800.f, 650.f, 60.f);
+
 	/** World-space spawn points (1 uu = 1 cm) for the human NPCs. */
 	UPROPERTY(EditDefaultsOnly, Category = "Level")
 	TArray<FVector> HumanSpawnPoints;
