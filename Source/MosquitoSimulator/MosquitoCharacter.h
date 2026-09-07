@@ -16,6 +16,7 @@ class UStaticMeshComponent;
 class UInputAction;
 class UInputMappingContext;
 class AHumanCharacter;
+class ASpiderCharacter;
 
 /**
  * Player mosquito.
@@ -153,6 +154,9 @@ public:
 	/** Short grace window after an escape so the web cannot instantly re-trap (P11 pattern). */
 	bool HasWebRetakeImmunity() const { return WebRetakeImmunityTimer > 0.f; }
 
+	/** Free the mosquito (struggle success or spider death). */
+	void EscapeWeb();
+
 protected:
 	/** Flight input callbacks (Enhanced Input). */
 	void MoveForward(const FInputActionValue& Value);
@@ -167,11 +171,12 @@ protected:
 	/** MVP 0.2 §1: struggle against the spider web (IA_Struggle = R). */
 	void OnStruggleStarted(const FInputActionValue& Value);
 	void OnStruggleCompleted(const FInputActionValue& Value);
-	void EscapeWeb();
 
 	// --- Prompt 9: bite & blood ---
 	void UpdateStats(float DeltaTime);
 	void DetectNearbyHumans();
+	/** MVP 0.2 §1: spider proximity (same query pattern, for the counter-bite). */
+	void DetectNearbySpiders();
 	void ResolvePawnPenetration(float DeltaTime);
 	void LogHumanCollision(const TCHAR* Type, const FVector& HumanCenter, const FVector& Normal, float Penetration);
 	void StickToLandedHuman();
@@ -255,6 +260,8 @@ protected:
 	TWeakObjectPtr<AHumanCharacter> LandedOnHuman;
 	TWeakObjectPtr<AHumanCharacter> NearestHuman;
 	float NearestHumanDistance = TNumericLimits<float>::Max();
+	TWeakObjectPtr<ASpiderCharacter> NearestSpider;
+	float NearestSpiderDistance = TNumericLimits<float>::Max();
 	bool bLoggedExhausted = false;
 	bool bLoggedStarving = false;
 

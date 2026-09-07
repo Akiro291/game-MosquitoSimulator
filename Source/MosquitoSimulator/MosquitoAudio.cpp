@@ -145,4 +145,38 @@ namespace MosquitoAudio
 		}
 		return NumSamples;
 	}
+
+	int32 GenerateSpiderClick(TArray<int16>& Out)
+	{
+		constexpr int32 NumSamples = static_cast<int32>(0.18f * SampleRate);
+		Out.Reset();
+		Out.Init(0, NumSamples);
+
+		FRandomStream Rng(20260907);
+		double NoiseState = 0.0;
+		double Phase = 0.0;
+
+		for (int32 i = 0; i < NumSamples; ++i)
+		{
+			const float T = i / static_cast<float>(SampleRate);
+			const float K = T / 0.18f;
+
+			// Buzzing pulse train: 400 -> 180 Hz gated at ~46 Hz.
+			const float FreqHz = FMath::Lerp(400.f, 180.f, K * K);
+			Phase += 2.0 * PI * FreqHz / SampleRate;
+			const float Buzz = (FMath::Sin(2.f * PI * 46.f * T) > 0.f)
+				? (FMath::Sin(static_cast<float>(Phase)) + 0.4f * FMath::Sin(2.f * static_cast<float>(Phase)))
+				: 0.f;
+
+			// Final fang snap: one-pole noise hit in the last ~35 ms.
+			NoiseState += 0.5f * (Rng.FRandRange(-1.f, 1.f) - NoiseState);
+			const float Snap = (T > 0.145f)
+				? (1.6f * static_cast<float>(NoiseState) * FMath::Exp(-(T - 0.145f) / 0.012f))
+				: 0.f;
+
+			const float Envelope = FMath::Exp(-K * 1.6f);
+			Out[i] = ToSample(0.45f * Buzz * Envelope + Snap);
+		}
+		return NumSamples;
+	}
 }

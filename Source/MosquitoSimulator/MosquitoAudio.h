@@ -44,4 +44,7 @@ namespace MosquitoAudio
 
 	/** Bite: descending skin-poke blip (~0.12 s). Returns sample count. */
 	int32 GenerateBite(TArray<int16>& Out);
+
+	/** MVP 0.2 §1: spider attack tell - buzzing click train ending in a snap (~0.18 s). */
+	int32 GenerateSpiderClick(TArray<int16>& Out);
 }

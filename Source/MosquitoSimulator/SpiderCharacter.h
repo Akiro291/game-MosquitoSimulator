@@ -7,7 +7,10 @@
 #include "SpiderCharacter.generated.h"
 
 class UStaticMeshComponent;
+class UAudioComponent;
+class USoundWaveProcedural;
 class AMosquitoCharacter;
+class UPrimitiveComponent;
 
 /**
  * MVP 0.2 §1: Tick-driven mini-FSM (owner decision: Idle + short lunge only,
@@ -50,6 +53,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Spider")
 	ESpiderState GetState() const { return CurrentState; }
 
+	/**
+	 * MVP 0.2 §1: the player bites back (same LMB distance path as landing).
+	 * A hit counts ONLY while the spider is in its attack windup - the one
+	 * vulnerability window (plan). Returns true if damage was registered.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Spider")
+	bool TakeBite();
+
 protected:
 	/** Gameplay radius of the web (cm) - entering it traps the mosquito. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spider|Web")
@@ -75,11 +86,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spider|Attack")
 	float BiteDamage = 10.f;
 
+	/** Plan §1: death needs 3 windup-window bites; the kill pays out this much. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spider|Attack")
+	int32 HealthBites = 3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spider|Reward")
+	int32 RewardScore = 150;
+
 	/** Body placeholder: a small dark sphere (a spider that dwarfs the 2 cm mosquito). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spider|Visual")
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
 
+	/** Web visuals: thin no-collision spokes - a gameplay query stays a query. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spider|Visual")
+	TArray<TObjectPtr<UStaticMeshComponent>> WebSpokes;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spider|Audio")
+	TObjectPtr<UAudioComponent> SfxAudio;
+
 private:
+	UPROPERTY(Transient)
+	TObjectPtr<USoundWaveProcedural> ClickWave = nullptr;
+	TArray<int16> ClickSamples;
+
 	FVector WebCenter = FVector::ZeroVector;
 
 	ESpiderState CurrentState = ESpiderState::Idle;
@@ -88,6 +117,7 @@ private:
 	FVector StepStart = FVector::ZeroVector;
 	FVector StepFinish = FVector::ZeroVector;
 	FVector BaseBodyScale = FVector::ZeroVector;
+	int32 HitsTaken = 0;
 
 	TWeakObjectPtr<AMosquitoCharacter> CachedMosquito;
 
@@ -100,7 +130,9 @@ private:
 	void BeginStep(const FVector& Target);
 	void StepTowardPrey(AMosquitoCharacter* Mosquito);
 
-	// --- Dev hook -SpiderTest (plan §1 Verification): headless trapped/escape proof ---
+	void InitAudio();
+	void PlayClick();
+	void DieAndReward(AMosquitoCharacter* Mosquito);
 
 	// --- Dev hook -SpiderTest (plan §1 Verification): headless trapped/escape proof ---
 	bool bDevTest = false;
@@ -110,4 +142,12 @@ private:
 	bool bDevTestDone = false;
 
 	void DevTestTick(float DeltaTime, AMosquitoCharacter* Mosquito);
+
+	// --- Dev hook -KillSpider (plan §1 Verification): 3 forced windup bites ---
+	bool bDevKill = false;
+	bool bDevKillDone = false;
+	float DevKillTimer = 0.f;
+	int32 DevKillBites = 0;
+
+	void DevKillTick(float DeltaTime, AMosquitoCharacter* Mosquito);
 };

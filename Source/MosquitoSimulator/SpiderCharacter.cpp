@@ -2,12 +2,17 @@
 
 #include "SpiderCharacter.h"
 
+#include "Components/AudioComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Misc/CommandLine.h"
+#include "MosquitoAudio.h"
 #include "MosquitoCharacter.h"
+#include "MosquitoPaint.h"
+#include "MosquitoSimulatorGameInstance.h"
+#include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
 ASpiderCharacter::ASpiderCharacter()
@@ -28,6 +33,29 @@ ASpiderCharacter::ASpiderCharacter()
 	// Web/spider are visual + query only: zero collision objects (plan §1).
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BodyMesh->SetMobility(EComponentMobility::Movable);
+
+	// --- Web visuals: thin cylinders laid out as spokes (plan §1: "нитей", NoCollision) ---
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	for (int32 i = 0; i < 6; ++i)
+	{
+		UStaticMeshComponent* Spoke = CreateDefaultSubobject<UStaticMeshComponent>(
+			*FString::Printf(TEXT("WebSpoke%d"), i));
+		Spoke->SetupAttachment(RootComponent);
+		if (CylinderFinder.Succeeded())
+		{
+			Spoke->SetStaticMesh(CylinderFinder.Object);
+		}
+		// Cylinder is 100 uu tall along its local Z; lay it down and stretch it across the web.
+		Spoke->SetRelativeScale3D(FVector(0.012f, 0.012f, 1.2f));
+		Spoke->SetRelativeRotation(FRotator(90.f, i * 30.f, 0.f));
+		Spoke->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Spoke->SetMobility(EComponentMobility::Movable);
+		WebSpokes.Add(Spoke);
+	}
+
+	SfxAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("SfxAudio"));
+	SfxAudio->SetupAttachment(RootComponent);
+	SfxAudio->bAutoActivate = false;
 }
 
 void ASpiderCharacter::BeginPlay()
@@ -37,10 +65,85 @@ void ASpiderCharacter::BeginPlay()
 	WebCenter = GetActorLocation();
 	BaseBodyScale = BodyMesh ? BodyMesh->GetRelativeScale3D() : FVector::ZeroVector;
 	bDevTest = FParse::Param(FCommandLine::Get(), TEXT("SPIDERTEST"));
+	bDevKill = FParse::Param(FCommandLine::Get(), TEXT("KILLSPIDER"));
 
-	UE_LOG(LogTemp, Display, TEXT("[Spider] Spawn OK. Web at (%.0f, %.0f, %.0f) radius=%.0f cm%s"),
+	// Dark-grey web/spider via the shared runtime painter (no assets).
+	MosquitoPaint::PaintMesh(BodyMesh, FLinearColor(0.08f, 0.08f, 0.09f));
+	for (UStaticMeshComponent* Spoke : WebSpokes)
+	{
+		MosquitoPaint::PaintMesh(Spoke, FLinearColor(0.42f, 0.42f, 0.45f));
+	}
+
+	InitAudio();
+
+	UE_LOG(LogTemp, Display, TEXT("[Spider] Spawn OK. Web at (%.0f, %.0f, %.0f) radius=%.0f cm%s%s"),
 		WebCenter.X, WebCenter.Y, WebCenter.Z, WebRadius,
-		bDevTest ? TEXT(" [SpiderTest dev flow armed]") : TEXT(""));
+		bDevTest ? TEXT(" [SpiderTest dev flow armed]") : TEXT(""),
+		bDevKill ? TEXT(" [KillSpider dev flow armed]") : TEXT(""));
+}
+
+void ASpiderCharacter::InitAudio()
+{
+	if (!SfxAudio)
+	{
+		return;
+	}
+	ClickWave = MosquitoAudio::MakeOneShotWave(this, MosquitoAudio::GenerateSpiderClick(ClickSamples));
+	SfxAudio->SetSound(ClickWave);
+	UE_LOG(LogTemp, Log, TEXT("[Spider] Procedural click ready (%d Hz mono, no assets)"), MosquitoAudio::SampleRate);
+}
+
+void ASpiderCharacter::PlayClick()
+{
+	if (!SfxAudio || !ClickWave || ClickSamples.Num() == 0)
+	{
+		return;
+	}
+	ClickWave->ResetAudio();
+	MosquitoAudio::QueueSamples(ClickWave, ClickSamples);
+	SfxAudio->Play();
+}
+
+bool ASpiderCharacter::TakeBite()
+{
+	if (CurrentState != ESpiderState::Windup)
+	{
+		// Vulnerability window only in the windup (plan §1).
+		UE_LOG(LogTemp, Log, TEXT("[Spider] Bite glances off - only the WINDUP exposes it (state=%d)"),
+			static_cast<int32>(CurrentState));
+		return false;
+	}
+
+	++HitsTaken;
+	PlayClick(); // hit confirmation on top of the upcoming return-strike tell
+	if (HitsTaken >= HealthBites)
+	{
+		DieAndReward(CachedMosquito.Get());
+		return true;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[Spider] Bite taken! %d/%d - keep it up"), HitsTaken, HealthBites);
+	return true;
+}
+
+void ASpiderCharacter::DieAndReward(AMosquitoCharacter* Mosquito)
+{
+	UE_LOG(LogTemp, Warning, TEXT("[Spider] Died +reward: web cleared, %d Score/XP paid"), RewardScore);
+
+	if (Mosquito)
+	{
+		Mosquito->AddScore(RewardScore);
+		if (UMosquitoSimulatorGameInstance* GameSave = UMosquitoSimulatorGameInstance::Get(Mosquito))
+		{
+			GameSave->AddLifetimeScore(RewardScore);
+			GameSave->AddXP(static_cast<float>(RewardScore));
+		}
+		if (Mosquito->IsTrapped())
+		{
+			Mosquito->EscapeWeb(); // the web vanishes with the spider
+		}
+	}
+
+	Destroy();
 }
 
 void ASpiderCharacter::Tick(float DeltaTime)
@@ -71,6 +174,15 @@ void ASpiderCharacter::Tick(float DeltaTime)
 		DevTestTick(DeltaTime, Mosquito);
 	}
 
+	if (bDevKill)
+	{
+		DevKillTick(DeltaTime, Mosquito);
+		if (bDevKillDone)
+		{
+			return; // DieAndReward already ran inside the dev flow
+		}
+	}
+
 	switch (CurrentState)
 	{
 	case ESpiderState::Idle:          TickIdle(DeltaTime, Mosquito); break;
@@ -92,6 +204,9 @@ void ASpiderCharacter::EnterState(ESpiderState NewState)
 	{
 	case ESpiderState::Approach:
 		StepIndex = 0;
+		break;
+	case ESpiderState::Windup:
+		PlayClick(); // buzzing click tell before the strike (plan §1 sound cue)
 		break;
 	case ESpiderState::ReturnHome:
 		StepStart = GetActorLocation();
@@ -239,6 +354,41 @@ void ASpiderCharacter::TickReturnHome(float DeltaTime)
 	{
 		SetActorLocation(WebCenter, false, nullptr, ETeleportType::None);
 		StepStart = WebCenter;
+		EnterState(ESpiderState::Idle);
+	}
+}
+
+void ASpiderCharacter::DevKillTick(float DeltaTime, AMosquitoCharacter* /*Mosquito*/)
+{
+	if (bDevKillDone)
+	{
+		return;
+	}
+	DevKillTimer += DeltaTime;
+	if (DevKillTimer < 2.f)
+	{
+		return;
+	}
+
+	// 3 bites every 0.25 s; force the windup so each dev bite lands in the
+	// real vulnerability window (plan §1 -KillSpider).
+	const int32 TargetBites = FMath::Min(HealthBites,
+		1 + static_cast<int32>((DevKillTimer - 2.f) / 0.25f));
+	while (DevKillBites < TargetBites)
+	{
+		++DevKillBites;
+		EnterState(ESpiderState::Windup);
+		const bool bCounted = TakeBite();
+		UE_LOG(LogTemp, Display, TEXT("[SpiderDev] Force bite %d/%d counted=%s"),
+			DevKillBites, HealthBites, bCounted ? TEXT("yes") : TEXT("NO - FAIL"));
+	}
+
+	if (HitsTaken >= HealthBites)
+	{
+		bDevKillDone = true;
+	}
+	else
+	{
 		EnterState(ESpiderState::Idle);
 	}
 }

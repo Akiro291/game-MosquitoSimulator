@@ -24,6 +24,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Components/AudioComponent.h"
 #include "MosquitoAudio.h"
+#include "SpiderCharacter.h"
 
 AMosquitoCharacter::AMosquitoCharacter()
 {
@@ -272,11 +273,28 @@ void AMosquitoCharacter::OnBitePressed()
 {
 	if (bTrappedByWeb)
 	{
-		return; // MVP 0.2 §1: no landing/biting while stuck in the web
+		// MVP 0.2 §1: the ONLY bite allowed while stuck is the counter-bite on the
+		// spider (counts only in its windup window - the spider decides).
+		if (ASpiderCharacter* Spider = NearestSpider.Get(); Spider && NearestSpiderDistance <= LandDistance)
+		{
+			Spider->TakeBite();
+			return;
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[Mosquito] Still glued to the web - mash R!"));
+		return;
 	}
+
 	if (bIsLanded)
 	{
 		StartBite();
+		return;
+	}
+
+	// Free flight: spider counter-bite wins over human landing if it's the nearer target.
+	ASpiderCharacter* Spider = NearestSpider.Get();
+	if (Spider && NearestSpiderDistance <= LandDistance && NearestSpiderDistance <= NearestHumanDistance)
+	{
+		Spider->TakeBite();
 		return;
 	}
 
@@ -498,6 +516,7 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 
 	UpdateStats(DeltaTime);
 	DetectNearbyHumans();
+	DetectNearbySpiders();
 
 	// Collision v5: keep the mosquito out of the human capsule (one-way:
 	// the human is never touched). The engine's swept move handles the
@@ -686,6 +705,28 @@ void AMosquitoCharacter::DetectNearbyHumans()
 		{
 			NearestHumanDistance = Dist;
 			NearestHuman = *It;
+		}
+	}
+}
+
+void AMosquitoCharacter::DetectNearbySpiders()
+{
+	NearestSpider = nullptr;
+	NearestSpiderDistance = TNumericLimits<float>::Max();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<ASpiderCharacter> It(World); It; ++It)
+	{
+		const float Dist = FVector::Dist(GetActorLocation(), It->GetActorLocation());
+		if (Dist < NearestSpiderDistance)
+		{
+			NearestSpiderDistance = Dist;
+			NearestSpider = *It;
 		}
 	}
 }
