@@ -30,20 +30,15 @@
 - Headless: EXIT=0, 0 fatal/ensure, Game class/Blockout/3×Spawn/HUD-маркеры, 19× readback=OK цветов.
 - PIE-гейт 2026-09-07: человек бежит в Chase, тряска безопасна, баланс принят владельцем.
 
-### ТЕКУЩАЯ COLLISION-КОНЦЕПЦИЯ (не отменять!)
-**Human НЕ воспринимает Mosquito как препятствие.** Фикс подбрасывания человека (v2, kinematic):
-- Капсула комара: `ECC_Pawn = ECR_Overlap` (`MosquitoCharacter.cpp` ctor) → физической блокировки
-  между комаром и человеком НЕТ; человек продолжает Wander/Chase, не получает impulse/Launch,
-  не меняет Z. Комар НЕ переведён на APawn/AActor, физика не используется.
-- `AMosquitoCharacter::ResolvePawnPenetration()` (Tick, только в полёте `!bIsLanded`): point-sweep
-  капсулы комара из центра человека наружу; при проникновении корректируется ТОЛЬКО позиция
-  комара (`SetActorLocation`, velocity не трогается — «дополнительного ускорения нет»).
-  Лог — Verbose (`[Mosquito::PawnPenetration]`). Query только при NearestHumanDistance
-  ≤ `PawnPenetrationQueryRadius` (150 см).
-- Посадка/укус идут отдельным путём (`StickToLandedHuman`, комар_adjacent к поверхности) —
-  коррекция в посадке выключена, Landing/Bite не мешает.
-**Старую физическую Block-схему не возвращать.** История: Ignore (комар сквозь человека) →
-Block (трамплин/подбрасывание) → **Overlap + ручная коррекция (текущая)**.
+### ТЕКУЩАЯ COLLISION-КОНЦЕПЦИЯ (v5b, односторонняя — не отменять!)
+**Human физически полностью игнорирует комара; комар блокируется человеком И миром.**
+- **Канал:** в DefaultEngine.ini добавлен object channel **"MosquitoBody"** (ECC_GameTraceChannel1) с **DefaultResponse=ECR_Block** — критично: мир (профиль BlockAll, пустые CustomResponses) берёт ответ на новый канал из DefaultResponse; с Ignore (ошибка v5) комар пролетал пол/стены/деревья.
+- **Комар** (`MosquitoCharacter.cpp` ctor): object type = MosquitoBody, response на `ECC_Pawn` = **Block** → собственный swept-move движка (CMC → SafeMoveUpdatedComponent → ResolvePenetration) останавливает/скользит комара по капсуле человека штатным механизмом; односторонне — движется только комар. WorldStatic/WorldDynamic = Block (из Pawn-профиля + DefaultResponse канала).
+- **Human** (`HumanCharacter.cpp` ctor): **runtime-override** response на MosquitoBody = **Ignore** → движение человека никогда не блокируется/де-пенетрируется/толкается комаром (лечит «подбрасывание»: human — object type ECC_Pawn с Block на Pawn-канал, его CMC выталкивал его из капсулы комара). Human-vs-human (ECC_Pawn) коллизии не изменены.
+- **`ResolvePawnPenetration(DeltaTime)`** (Tick, только `!bIsLanded`): закрывает случай «человек прошёл над зависшим комаром» — комар выталкивается аналитической математикой capsule-vs-capsule по минимальному вектору разделения (только позиция, velocity не тронут, sweep=true от мира). В v4 направление push было инвертировано (тянуло к центру — протаскивало сквозь тело) — исправлено.
+- **Диагностика (TEMP):** `[ Mosquito::HumanCollision ]` type=BLOCKED/DEPENETRATED + loc/normal/penetration/velocity, throttle 0.5 с (`LogHumanCollision`) — удалить после PIE-верификации владельцем.
+- Посадка/укус: отдельный путь `StickToLandedHuman`, депенетрация скипается при `bIsLanded`.
+**Возвращать двустороннюю Block-схему или Overlap-варианты запрещено.** История: Block (трамплин) → Overlap+ручная коррекция (инвертированный push + human всё ещё блокировал Pawn-канал) → **v5/v5b односторонняя (текущая)**.
 
 ### KNOWN ISSUES
 - Камера: SpringArm `bDoCollisionTest=false` (может входить в стены вблизи).

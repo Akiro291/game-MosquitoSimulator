@@ -38,24 +38,26 @@ AMosquitoCharacter::AMosquitoCharacter()
 	{
 		Capsule->InitCapsuleSize(CapsuleRadius, CapsuleHalfHeight);
 		Capsule->SetCollisionProfileName(UCollisionProfile::Pawn_ProfileName);
-						// FINAL HOTFIX MVP 0.1 — Mosquito <-> Human collision (v2, kinematic design):
+
+		// Collision v5 - ONE-SIDED mosquito-vs-human model:
 		//
-		// HUMAN does NOT perceive MOSQUITO as an obstacle. Mosquito cannot be
-		// inside Human; when a penetration is detected only the Mosquito's
-		// position is corrected (no impulse, no Launch, no physics on either
-		// side):
-		//  - ECC_Pawn is ECR_Overlap  -> Human never receives an impulse/vertical
-		//    push from the mosquito (fixes "[Human] подбрасывается вверх").
-		//    Human keeps walking normally (Wander/Chase) regardless of the mosquito.
-		//  - Overlap events are enabled so the mosquito can run its own sweep,
-		//    but the Human's CharacterMovement keeps bRunPhysicsWithNoController
-		//    = true and is untouched.
-		//  - Positional correction is applied manually in Tick::ResolvePawnPenetration
-		//    ONLY while the mosquito is flying (!bIsLanded). Landing/Bite use a
-		//    separate attachment path (StickToLandedHuman) that intentionally
-		//    keeps the mosquito adjacent to the human surface, so correction is
-		//    skipped there to never interfere with Bite/Landing.
-		Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+		// The mosquito's capsule gets the dedicated "MosquitoBody" OBJECT
+		// channel and BLOCKS against the Pawn channel. That way the
+		// mosquito's own swept movement (CharacterMovementComponent ->
+		// SafeMoveUpdatedComponent -> ResolvePenetration) stops and slides
+		// on the human's capsule using the standard engine mechanism, and a
+		// penetration is resolved by moving ONLY the mosquito.
+		//
+		// The HUMAN ignores the MosquitoBody channel entirely (set in
+		// AHumanCharacter ctor), so the human's movement can never collide
+		// with, push, launch or depenetrate itself against the mosquito.
+		// Human AI/speed/direction are physically untouched by the mosquito.
+		//
+		// A small manual depenetration in Tick (ResolvePawnPenetration)
+		// covers the case where the human walks over a standing mosquito:
+		// the mosquito is pushed out of the human capsule, position-only.
+		Capsule->SetCollisionObjectType(ECC_GameTraceChannel1); // MosquitoBody
+		Capsule->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 		Capsule->SetGenerateOverlapEvents(true);
 	}
 
@@ -394,9 +396,11 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 	UpdateStats(DeltaTime);
 	DetectNearbyHumans();
 
-	// Collision v2: keep the mosquito out of the human capsule without
-	// touching the human's movement in any way (no impulse/launch/Z change).
-	ResolvePawnPenetration();
+	// Collision v5: keep the mosquito out of the human capsule (one-way:
+	// the human is never touched). The engine's swept move handles the
+	// mosquito flying INTO the human; this manual pass handles the human
+	// walking over a mosquito.
+	ResolvePawnPenetration(DeltaTime);
 
 	if (bBiting)
 	{
@@ -577,97 +581,121 @@ void AMosquitoCharacter::DetectNearbyHumans()
 	}
 }
 
-void AMosquitoCharacter::ResolvePawnPenetration()
+void AMosquitoCharacter::ResolvePawnPenetration(float DeltaTime)
 {
-	// Collision v2 (FINAL design):
-	//   Human does NOT perceive the mosquito as an obstacle. The human keeps
-	//   wandering/chasing with zero reaction - no impulse, no Launch, no Z
-	//   change, no movement change. The MOSQUITO cannot stay inside the human:
-	//   when penetration is detected only the mosquito's position is corrected
-	//   (positional depenetration via a point sweep, velocity untouched, no
-	//   physics, no AddImpulse/AddForce/LaunchCharacter).
-	// Landing/Bite use the separate StickToLandedHuman attachment path which
-	// keeps the mosquito adjacent to (not inside) the host, so correction is
-	// skipped while landed to never interfere with landing/biting.
+	// TEMP diagnostics throttle: one [ Mosquito::HumanCollision ] entry max
+	// every 0.5 s (never per-frame spam).
+	HumanCollisionDiagTimer -= DeltaTime;
+
+	// Collision v5 - one-way coverage for the hole the engine cannot fill:
+	// the HUMAN ignores the mosquito's body channel, so when the human WALKS
+	// OVER a hovering mosquito nothing pushes the mosquito out on its own.
+	// Here the mosquito alone is pushed out of the human capsule along the
+	// minimal separation vector (position only - velocity, acceleration and
+	// movement mode untouched; no impulse/force/Launch on either side; the
+	// human actor is never modified). Skipped while landed so the separate
+	// StickToLandedHuman attachment path (Landing/Bite) is never disturbed.
+	//
+	// NOTE: when the MOSQUITO flies INTO the human, the engine itself blocks
+	// the move (the mosquito's capsule blocks ECC_Pawn) - that path needs no
+	// manual code and is reported via the BLOCKED diagnostics below.
 	if (bIsLanded || bDead)
 	{
 		return;
 	}
 
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	// Cheap pre-filter: run the query only when the nearest human is close.
+	// Cheap pre-filter: max meaningful center distance is ~87 cm (human
+	// capsule height + both radii), so 150 cm never misses a penetration.
 	if (NearestHumanDistance > PawnPenetrationQueryRadius)
 	{
 		return;
 	}
 
-	AHumanCharacter* Human = NearestHuman.Get();
-	if (!Human)
-	{
-		return;
-	}
-
-	const UCapsuleComponent* HumanCapsule = Human->GetCapsuleComponent();
+	const AHumanCharacter* Human = NearestHuman.Get();
+	const UCapsuleComponent* HumanCapsule = Human ? Human->GetCapsuleComponent() : nullptr;
 	if (!HumanCapsule)
 	{
 		return;
 	}
 
-	// Point sweep of the mosquito capsule shape from the human center outward:
-	// if the mosquito capsule overlaps the human capsule, the sweep hit gives
-	// the minimal push-out direction and depth. This is a read-only query
-	// against the human's capsule only - no physics response on either side.
-	FCollisionObjectQueryParams ObjectParams;
-	ObjectParams.AddObjectTypesToQuery(HumanCapsule->GetCollisionObjectType()); // ECC_Pawn
+	const float HumanRadius = HumanCapsule->GetScaledCapsuleRadius();
+	const float HumanSegHalf = FMath::Max(0.f, HumanCapsule->GetScaledCapsuleHalfHeight() - HumanRadius);
+	const FVector HumanCenter = HumanCapsule->GetComponentLocation();
 
-	const FCollisionShape MosquitoShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
-	const FVector Start = Human->GetActorLocation();
-	const FVector End = GetActorLocation();
+	const FVector MosPos = GetActorLocation();
+	const float MosSegHalf = FMath::Max(0.f, CapsuleHalfHeight - CapsuleRadius);
 
-	FHitResult Hit;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(MosquitoPawnPenetration), false);
-	Params.AddIgnoredActor(this); // the query shape belongs to the mosquito
+	// Distance between the two upright capsule AXES (segment-to-segment for
+	// parallel vertical axes): horizontal axis distance + vertical gap
+	// between the capsule cylinder segments.
+	const float VerticalGap = FMath::Max(0.f, FMath::Max(
+		(HumanCenter.Z - HumanSegHalf) - (MosPos.Z + MosSegHalf),
+		(MosPos.Z - MosSegHalf) - (HumanCenter.Z + HumanSegHalf)));
+	const float HorizontalDist = FVector::Dist2D(MosPos, HumanCenter);
+	const float AxisDist = FMath::Sqrt(HorizontalDist * HorizontalDist + VerticalGap * VerticalGap);
 
-	const bool bStartPenetrating = World->SweepSingleByObjectType(
-		Hit, Start, End, FQuat::Identity, ObjectParams, MosquitoShape, Params);
+	const float SumRadii = CapsuleRadius + HumanRadius;
+	const float Penetration = SumRadii - AxisDist;
 
-	if (!bStartPenetrating || !Hit.bBlockingHit || Hit.bStartPenetrating)
+	const FVector Vel = GetVelocity();
+	const bool bMovingIntoHuman = (Vel.Size() > 20.f) &&
+		(FVector::DotProduct(Vel, (HumanCenter - MosPos).GetSafeNormal()) > 0.3f);
+
+	if (Penetration > 0.f)
 	{
-		// No overlap (or the sweep started free) - nothing to fix.
+		// Minimal separation direction: AWAY from the human axis (v4 bug fix:
+		// it pushed TOWARD the center and dragged the mosquito through the
+		// body), plus the vertical component when above/below the caps.
+		FVector Away(MosPos.X - HumanCenter.X, MosPos.Y - HumanCenter.Y, 0.f);
+		if (VerticalGap > 0.f)
+		{
+			Away.Z = VerticalGap * FMath::Sign(MosPos.Z - HumanCenter.Z);
+		}
+		if (Away.IsNearlyZero())
+		{
+			// Dead center inside: push straight up until fully outside.
+			Away = FVector(0.f, 0.f,
+				(HumanCenter.Z + HumanSegHalf + HumanRadius + CapsuleRadius) - MosPos.Z + 1.f);
+		}
+		Away = Away.GetSafeNormal();
+
+		// Swept so the correction cannot shove the mosquito inside world
+		// geometry; blocked by walls, never by the human (human ignores us,
+		// we block the human only during OUR own movement).
+		const FVector NewLocation = MosPos + Away * (Penetration + 0.05f);
+		SetActorLocation(NewLocation, /*bSweep=*/true, nullptr, ETeleportType::None);
+
+		LogHumanCollision(bMovingIntoHuman ? TEXT("BLOCKED") : TEXT("DEPENETRATED"),
+			HumanCenter, Away, Penetration);
 		return;
 	}
 
-	// Hit.bStartPenetrating + Hit.PenetrationDepth = minimal depenetration
-	// vector; move the mosquito out along it. Position only - velocity,
-	// acceleration and movement mode are untouched, so the correction adds
-	// no extra speed to the mosquito.
-	FVector PushOut = Hit.ImpactNormal * Hit.PenetrationDepth;
-	if (PushOut.IsNearlyZero())
+	// No penetration: report BLOCKED while the mosquito presses against the
+	// human surface (the engine's swept move holds it there every frame).
+	const float SurfaceDist = AxisDist - SumRadii;
+	if (bMovingIntoHuman && SurfaceDist < 2.f)
 	{
-		// Degenerate depth: fall back to the direction from the human center.
-		FVector Dir = End - Start;
-		if (Dir.IsNearlyZero())
-		{
-			Dir = FVector::UpVector;
-		}
-		Dir.Z = 0.f; // prefer lateral correction; human capsule is vertical
-		if (Dir.IsNearlyZero())
-		{
-			Dir = FVector::RightVector;
-		}
-		PushOut = Dir.GetSafeNormal() * (CapsuleRadius + HumanCapsule->GetUnscaledCapsuleRadius() + 1.f);
+		LogHumanCollision(TEXT("BLOCKED"), HumanCenter,
+			(MosPos - HumanCenter).GetSafeNormal(), 0.f);
 	}
+}
 
-	const FVector NewLocation = GetActorLocation() + PushOut;
-	SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
+void AMosquitoCharacter::LogHumanCollision(const TCHAR* Type, const FVector& HumanCenter, const FVector& Normal, float Penetration)
+{
+	if (HumanCollisionDiagTimer > 0.f)
+	{
+		return;
+	}
+	HumanCollisionDiagTimer = 0.5f;
 
-	UE_LOG(LogTemp, Verbose, TEXT("[Mosquito::PawnPenetration] pushed out %.2f cm (dist=%.1f)"),
-		PushOut.Size(), NearestHumanDistance);
+	// TEMP DIAGNOSTICS: remove after the owner's PIE verification.
+	UE_LOG(LogTemp, Log, TEXT("[ Mosquito::HumanCollision ]\ntype=%s\nmosquitoLoc=%s\nhumanLoc=%s\nnormal=%s\npenetration=%.2f\nvelocity=%s"),
+		Type,
+		*GetActorLocation().ToString(),
+		*HumanCenter.ToString(),
+		*Normal.ToString(),
+		Penetration,
+		*GetVelocity().ToString());
 }
 
 void AMosquitoCharacter::StickToLandedHuman()

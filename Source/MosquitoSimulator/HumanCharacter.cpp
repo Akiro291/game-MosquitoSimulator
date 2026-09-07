@@ -43,6 +43,12 @@ AHumanCharacter::AHumanCharacter()
 	if (Capsule)
 	{
 		Capsule->InitCapsuleSize(CapsuleRadius, CapsuleHalfHeight);
+		// Collision v5: the human COMPLETELY ignores the mosquito's dedicated
+		// body channel ("MosquitoBody"). The human's own movement is never
+		// blocked, depenetrated, pushed or launched by the mosquito - speed,
+		// direction and AI stay untouched. Human-vs-human collisions
+		// (ECC_Pawn) are unchanged.
+		Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);
 	}
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())

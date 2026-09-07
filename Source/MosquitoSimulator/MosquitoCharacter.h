@@ -148,7 +148,8 @@ protected:
 	// --- Prompt 9: bite & blood ---
 	void UpdateStats(float DeltaTime);
 	void DetectNearbyHumans();
-	void ResolvePawnPenetration();
+	void ResolvePawnPenetration(float DeltaTime);
+	void LogHumanCollision(const TCHAR* Type, const FVector& HumanCenter, const FVector& Normal, float Penetration);
 	void StickToLandedHuman();
 	void LandOn(AHumanCharacter* Human);
 	void TakeOff();
@@ -173,10 +174,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Bite")
 	float BiteCooldown = 0.5f;
 
-	// --- Collision v2: manual depenetration vs Human (mosquito-only correction) ---
+	// --- Collision v5: one-way Mosquito<->Human (see ResolvePawnPenetration) ---
 	/** Overlap query runs only while the nearest human is closer than this (cm). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito|Collision")
 	float PawnPenetrationQueryRadius = 150.f;
+
+	/** TEMP: throttle for [ Mosquito::HumanCollision ] diagnostics (seconds). */
+	float HumanCollisionDiagTimer = 0.f;
 
 	// --- Stat tick tuning ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")
