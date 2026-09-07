@@ -17,6 +17,7 @@ class UInputAction;
 class UInputMappingContext;
 class AHumanCharacter;
 class ASpiderCharacter;
+class UMosquitoSimulatorGameInstance;
 
 /**
  * Player mosquito.
@@ -157,6 +158,10 @@ public:
 	/** Free the mosquito (struggle success or spider death). */
 	void EscapeWeb();
 
+	// --- MVP 0.2 §3/§4: run-upgrade panel (Tab; purchase keys 1-4; NO world pause) ---
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Progression")
+	bool IsUpgradePanelOpen() const { return bUpgradePanelOpen; }
+
 protected:
 	/** Flight input callbacks (Enhanced Input). */
 	void MoveForward(const FInputActionValue& Value);
@@ -171,6 +176,13 @@ protected:
 	/** MVP 0.2 §1: struggle against the spider web (IA_Struggle = R). */
 	void OnStruggleStarted(const FInputActionValue& Value);
 	void OnStruggleCompleted(const FInputActionValue& Value);
+
+	/** MVP 0.2 §4: Tab panel + run-branch purchases (keys 1-4). */
+	void OnToggleUpgradePanel(const FInputActionValue& Value);
+	void OnBuyBranchWingControl(const FInputActionValue& Value);
+	void OnBuyBranchPropulsion(const FInputActionValue& Value);
+	void OnBuyBranchWebEscape(const FInputActionValue& Value);
+	void OnBuyBranchMetabolism(const FInputActionValue& Value);
 
 	// --- Prompt 9: bite & blood ---
 	void UpdateStats(float DeltaTime);
@@ -249,6 +261,15 @@ protected:
 	float EscapeMeter = 1.f;
 	bool bStruggleHeld = false;
 	float WebRetakeImmunityTimer = 0.f;
+
+	// --- MVP 0.2 §4: progression runtime ---
+	UPROPERTY()
+	TObjectPtr<UMosquitoSimulatorGameInstance> GameSave = nullptr;
+
+	/** Base for WingControl upgrades - captured BEFORE multipliers ever touch it. */
+	float BaseMaxAcceleration = 800.f;
+
+	bool bUpgradePanelOpen = false;
 
 	// --- Prompt 9: bite runtime ---
 	bool bIsLanded = false;
@@ -396,4 +417,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UInputAction> StruggleAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> UpgradePanelAction;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UInputAction>> BranchActions;
 };

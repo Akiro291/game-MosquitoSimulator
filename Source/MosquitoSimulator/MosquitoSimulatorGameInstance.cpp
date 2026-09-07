@@ -96,16 +96,121 @@ bool UMosquitoSimulatorGameInstance::TrySpendLevelUpPoint()
 	return false;
 }
 
-bool UMosquitoSimulatorGameInstance::BuySpeciesBranchLevel(int32& InOutBranchLevel)
+// --- §4 layer A: run branches ---
+
+int32 UMosquitoSimulatorGameInstance::GetRunBranchLevel(ERunBranch Branch) const
 {
-	if (InOutBranchLevel >= MaxSpeciesBranchLevel || UnspentSpeciesPoints <= 0)
+	const int32 Index = static_cast<int32>(Branch);
+	return (Index >= 0 && Index <= static_cast<int32>(ERunBranch::Metabolism))
+		? RunBranchLevels[Index] : 0;
+}
+
+bool UMosquitoSimulatorGameInstance::BuyRunUpgrade(ERunBranch Branch)
+{
+	const int32 Index = static_cast<int32>(Branch);
+	if (Index < 0 || Index > static_cast<int32>(ERunBranch::Metabolism))
+	{
+		return false;
+	}
+	int32& Level = RunBranchLevels[Index];
+	if (Level >= MosquitoProgression::MaxRunBranchLevel)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Progression] %s already at max level"),
+			*MosquitoProgression::GetRunBranchName(Branch));
+		return false;
+	}
+	if (!TrySpendLevelUpPoint())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Progression] No level-up points for %s"),
+			*MosquitoProgression::GetRunBranchName(Branch));
+		return false;
+	}
+	++Level;
+	UE_LOG(LogTemp, Display, TEXT("[Progression] Bought %s -> L%d (%d point(s) left)"),
+		*MosquitoProgression::GetRunBranchName(Branch), Level, UnspentLevelUpPoints);
+	return true;
+}
+
+void UMosquitoSimulatorGameInstance::ResetRunProgress()
+{
+	RunXP = 0.f;
+	RunLevel = 1;
+	UnspentLevelUpPoints = 0;
+	RunBranchLevels[static_cast<int32>(ERunBranch::WingControl)] = 0;
+	RunBranchLevels[static_cast<int32>(ERunBranch::MuscularPropulsion)] = 0;
+	RunBranchLevels[static_cast<int32>(ERunBranch::WebEscapeReflexes)] = 0;
+	RunBranchLevels[static_cast<int32>(ERunBranch::Metabolism)] = 0;
+}
+
+float UMosquitoSimulatorGameInstance::GetWingControlMult() const
+{
+	return FMath::Pow(MosquitoProgression::WingControlAccelPerLevel, GetRunBranchLevel(ERunBranch::WingControl));
+}
+
+float UMosquitoSimulatorGameInstance::GetPropulsionMult() const
+{
+	return FMath::Pow(MosquitoProgression::PropulsionSpeedPerLevel, GetRunBranchLevel(ERunBranch::MuscularPropulsion));
+}
+
+float UMosquitoSimulatorGameInstance::GetWebEscapeMult() const
+{
+	return FMath::Pow(MosquitoProgression::WebEscapePerTapPerLevel, GetRunBranchLevel(ERunBranch::WebEscapeReflexes));
+}
+
+float UMosquitoSimulatorGameInstance::GetMetabolismMult() const
+{
+	return FMath::Pow(MosquitoProgression::MetabolismHungerPerLevel, GetRunBranchLevel(ERunBranch::Metabolism));
+}
+
+// --- §4 layer B: species branches ---
+
+int32 UMosquitoSimulatorGameInstance::GetSpeciesBranchLevel(ESpeciesBranch Branch) const
+{
+	switch (Branch)
+	{
+	case ESpeciesBranch::BloodEfficiency: return SpeciesBloodEfficiency;
+	case ESpeciesBranch::WebResistantAdhesion: return SpeciesWebResistantAdhesion;
+	case ESpeciesBranch::Exoskeleton: return SpeciesExoskeleton;
+	default: return 0;
+	}
+}
+
+bool UMosquitoSimulatorGameInstance::BuySpeciesBranchLevel(ESpeciesBranch Branch)
+{
+	int32* Level = nullptr;
+	switch (Branch)
+	{
+	case ESpeciesBranch::BloodEfficiency: Level = &SpeciesBloodEfficiency; break;
+	case ESpeciesBranch::WebResistantAdhesion: Level = &SpeciesWebResistantAdhesion; break;
+	case ESpeciesBranch::Exoskeleton: Level = &SpeciesExoskeleton; break;
+	default: return false;
+	}
+
+	if (*Level >= MaxSpeciesBranchLevel || UnspentSpeciesPoints <= 0)
 	{
 		return false;
 	}
 	--UnspentSpeciesPoints;
-	++InOutBranchLevel;
+	++(*Level);
 	bDirty = true;
+	UE_LOG(LogTemp, Display, TEXT("[Progression] Species bought %s -> L%d (%d point(s) left)"),
+		*MosquitoProgression::GetSpeciesBranchName(Branch), *Level, UnspentSpeciesPoints);
 	return true;
+}
+
+float UMosquitoSimulatorGameInstance::GetBloodEfficiencyMult() const
+{
+	return FMath::Pow(MosquitoProgression::BloodEfficiencyGainPerLevel, SpeciesBloodEfficiency);
+}
+
+float UMosquitoSimulatorGameInstance::GetWebResistantAdhesionMult() const
+{
+	return FMath::Pow(MosquitoProgression::WebResistantAdhesionRecoverPerLevel, SpeciesWebResistantAdhesion);
+}
+
+float UMosquitoSimulatorGameInstance::GetExoskeletonHpBonus() const
+{
+	return MosquitoProgression::ExoskeletonHpPerLevel * SpeciesExoskeleton;
 }
 
 void UMosquitoSimulatorGameInstance::AddLifetimeScore(int32 Amount)

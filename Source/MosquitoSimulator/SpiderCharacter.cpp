@@ -11,7 +11,6 @@
 #include "MosquitoAudio.h"
 #include "MosquitoCharacter.h"
 #include "MosquitoPaint.h"
-#include "MosquitoSimulatorGameInstance.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -131,12 +130,8 @@ void ASpiderCharacter::DieAndReward(AMosquitoCharacter* Mosquito)
 
 	if (Mosquito)
 	{
+		// MVP 0.2 §4: AddScore now forwards to Score -> XP + lifetime (a single pipe).
 		Mosquito->AddScore(RewardScore);
-		if (UMosquitoSimulatorGameInstance* GameSave = UMosquitoSimulatorGameInstance::Get(Mosquito))
-		{
-			GameSave->AddLifetimeScore(RewardScore);
-			GameSave->AddXP(static_cast<float>(RewardScore));
-		}
 		if (Mosquito->IsTrapped())
 		{
 			Mosquito->EscapeWeb(); // the web vanishes with the spider

@@ -8,6 +8,8 @@
 #include "HumanCharacter.h"
 #include "Kismet/GameplayStatics.h"
 #include "MosquitoCharacter.h"
+#include "MosquitoProgressionTypes.h"
+#include "MosquitoSimulatorGameInstance.h"
 #include "MosquitoSimulatorPlayerController.h"
 
 AMosquitoHUD::AMosquitoHUD()
@@ -221,6 +223,97 @@ void AMosquitoHUD::DrawScore()
 		FLinearColor(1.f, 0.9f, 0.4f), ScoreX, ScoreY + 22.f, GEngine->GetMediumFont());
 }
 
+static UMosquitoSimulatorGameInstance* GetGameSave(const AHUD* Hud)
+{
+	const UWorld* World = Hud ? Hud->GetWorld() : nullptr;
+	return World ? World->GetGameInstance<UMosquitoSimulatorGameInstance>() : nullptr;
+}
+
+void AMosquitoHUD::DrawRunProgress(AMosquitoCharacter* Mosquito)
+{
+	if (!Mosquito || !Canvas)
+	{
+		return;
+	}
+	const UMosquitoSimulatorGameInstance* GameSave = GetGameSave(this);
+	if (!GameSave)
+	{
+		return; // null-guard (plan §3): never let new data break the old HUD
+	}
+
+	const float X = Canvas->SizeX - 200.f;
+	const float Y = BarAnchorY + 100.f;
+	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.8f), X - 8.f, Y - 8.f, 192.f, 40.f);
+	DrawText(FString::Printf(TEXT("Level %d  XP %d/%d"), GameSave->RunLevel,
+			FMath::FloorToInt(GameSave->RunXP), FMath::RoundToInt32(UMosquitoSimulatorGameInstance::XPToNext(GameSave->RunLevel))),
+		FLinearColor(0.4f, 1.f, 0.6f), X, Y, GEngine->GetSmallFont());
+	if (GameSave->UnspentLevelUpPoints > 0)
+	{
+		const float Blink = (FMath::FloorToInt(GetWorld()->GetTimeSeconds() * 2.f) % 2) == 0 ? 1.f : 0.35f;
+		DrawText(FString::Printf(TEXT("%d point(s)! press Tab"), GameSave->UnspentLevelUpPoints),
+			FLinearColor(1.f, 1.f, 0.2f, Blink), X, Y + 18.f, GEngine->GetSmallFont());
+	}
+	else
+	{
+		DrawText(TEXT("Tab: upgrades"), FLinearColor(0.8f, 0.8f, 0.8f), X, Y + 18.f, GEngine->GetSmallFont());
+	}
+}
+
+void AMosquitoHUD::DrawUpgradePanel(AMosquitoCharacter* Mosquito)
+{
+	if (!Mosquito || !Canvas || !Mosquito->IsUpgradePanelOpen())
+	{
+		return;
+	}
+	const UMosquitoSimulatorGameInstance* GameSave = GetGameSave(this);
+	if (!GameSave)
+	{
+		return;
+	}
+
+	const float W = 460.f;
+	const float RowH = 40.f;
+	const float H = 64.f + 4.f * RowH;
+	const float X = (Canvas->SizeX - W) * 0.5f;
+	const float Y = BarAnchorY + 60.f;
+
+	DrawRect(FLinearColor::Black, X - 2.f, Y - 2.f, W + 4.f, H + 4.f);
+	DrawRect(FLinearColor(0.07f, 0.07f, 0.09f, 0.92f), X, Y, W, H);
+	DrawText(TEXT("MOSQUITO UPGRADES (run) - [Tab] close"),
+		FLinearColor(1.f, 0.8f, 0.2f), X + 12.f, Y + 8.f, GEngine->GetMediumFont());
+	DrawText(FString::Printf(TEXT("Level %d - free points: %d   (1 point per upgrade, max L3)"),
+			GameSave->RunLevel, GameSave->UnspentLevelUpPoints),
+		FLinearColor::White, X + 12.f, Y + 36.f, GEngine->GetSmallFont());
+
+	const ERunBranch Branches[4] = {
+		ERunBranch::WingControl, ERunBranch::MuscularPropulsion,
+		ERunBranch::WebEscapeReflexes, ERunBranch::Metabolism};
+
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const int32 Level = GameSave->GetRunBranchLevel(Branches[i]);
+		const bool bMaxed = Level >= MosquitoProgression::MaxRunBranchLevel;
+		const bool bAffordable = GameSave->UnspentLevelUpPoints > 0 && !bMaxed;
+		const FLinearColor RowColor = bMaxed ? FLinearColor(0.5f, 0.5f, 0.5f)
+			: (bAffordable ? FLinearColor(0.4f, 1.f, 0.5f) : FLinearColor(1.f, 0.35f, 0.3f));
+		const float RowY = Y + 60.f + i * RowH;
+		DrawText(FString::Printf(TEXT("[%d] %s - %s   L%d/%d%s"),
+				i + 1,
+				*MosquitoProgression::GetRunBranchName(Branches[i]),
+				*MosquitoProgression::GetRunBranchEffect(Branches[i]),
+				Level, MosquitoProgression::MaxRunBranchLevel,
+				bMaxed ? TEXT("  MAX") : TEXT("")),
+			RowColor, X + 12.f, RowY, GEngine->GetMediumFont());
+	}
+
+	// Plan §3: world is NOT paused while the panel is open - make it visible intent.
+	if (FMath::FloorToInt(GetWorld()->GetTimeSeconds() * 2.f) % 2 == 0)
+	{
+		DrawText(TEXT("(panel open - flight continues)"),
+			FLinearColor(0.7f, 0.7f, 0.7f), X + 12.f, Y + H - 20.f, GEngine->GetSmallFont());
+	}
+}
+
 void AMosquitoHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -271,6 +364,8 @@ void AMosquitoHUD::DrawHUD()
 	DrawClock();
 	DrawBiteProgress();
 	DrawScore();
+	DrawRunProgress(Mosquito);
+	DrawUpgradePanel(Mosquito);
 	DrawCrosshair();
 }
 

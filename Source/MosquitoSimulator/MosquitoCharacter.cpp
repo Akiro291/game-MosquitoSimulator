@@ -25,6 +25,7 @@
 #include "Components/AudioComponent.h"
 #include "MosquitoAudio.h"
 #include "SpiderCharacter.h"
+#include "MosquitoSimulatorGameInstance.h"
 
 AMosquitoCharacter::AMosquitoCharacter()
 {
@@ -137,6 +138,16 @@ AMosquitoCharacter::AMosquitoCharacter()
 	StruggleAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_Struggle"));
 	StruggleAction->ValueType = EInputActionValueType::Axis1D;
 
+	// MVP 0.2 §4: panel + four run-branch purchase actions.
+	UpgradePanelAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_UpgradePanel"));
+	BranchActions.Reset();
+	static const FName BranchActionNames[4] = {
+		TEXT("IA_Branch1"), TEXT("IA_Branch2"), TEXT("IA_Branch3"), TEXT("IA_Branch4")};
+	for (int32 i = 0; i < 4; ++i)
+	{
+		BranchActions.Add(CreateDefaultSubobject<UInputAction>(BranchActionNames[i]));
+	}
+
 	// Flight: W/S, A/D, up = Space or E, down = LeftCtrl or Q.
 	FlightContext->MapKey(MoveForwardAction, EKeys::W);
 	UInputModifierNegate* NegateBack = CreateDefaultSubobject<UInputModifierNegate>(TEXT("Negate_MoveBack"));
@@ -162,6 +173,13 @@ AMosquitoCharacter::AMosquitoCharacter()
 
 	// MVP 0.2 §1: R = struggle in a spider web.
 	FlightContext->MapKey(StruggleAction, EKeys::R);
+
+	// MVP 0.2 §4: Tab opens the upgrade panel; 1-4 buy the branches while it's open.
+	FlightContext->MapKey(UpgradePanelAction, EKeys::Tab);
+	FlightContext->MapKey(BranchActions[0], EKeys::One);
+	FlightContext->MapKey(BranchActions[1], EKeys::Two);
+	FlightContext->MapKey(BranchActions[2], EKeys::Three);
+	FlightContext->MapKey(BranchActions[3], EKeys::Four);
 }
 
 void AMosquitoCharacter::BeginPlay()
@@ -184,6 +202,28 @@ void AMosquitoCharacter::BeginPlay()
 	}
 
 	bIsFlying = true;
+
+	// MVP 0.2 §4: cache the persistent save + capture the canonical accel BEFORE
+	// any upgrade multiplier is ever applied (FlightSpeed itself stays untouched).
+	GameSave = UMosquitoSimulatorGameInstance::Get(this);
+	if (const UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		BaseMaxAcceleration = Movement->MaxAcceleration;
+		if (!GameSave)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Mosquito] GameInstance NOT found - progression disabled"));
+		}
+	}
+
+	// Dev helper for headless progression proof (-SeedRunXP=250 -> level ups +
+	// one purchase through the same BuyRunUpgrade API the Tab panel uses).
+	float SeedXP = 0.f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("SeedRunXP="), SeedXP) && GameSave)
+	{
+		GameSave->AddXP(SeedXP);
+		GameSave->BuyRunUpgrade(ERunBranch::MuscularPropulsion);
+		UE_LOG(LogTemp, Display, TEXT("[Progression] Seeded run XP=%.0f"), SeedXP);
+	}
 
 	// Prompt 14: start the procedural buzz + prepare the bite one-shot.
 	InitAudio();
@@ -217,6 +257,11 @@ void AMosquitoCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(SenseAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnSensePressed);
 		EnhancedInput->BindAction(StruggleAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnStruggleStarted);
 		EnhancedInput->BindAction(StruggleAction, ETriggerEvent::Completed, this, &AMosquitoCharacter::OnStruggleCompleted);
+		EnhancedInput->BindAction(UpgradePanelAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnToggleUpgradePanel);
+		EnhancedInput->BindAction(BranchActions[0], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchWingControl);
+		EnhancedInput->BindAction(BranchActions[1], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchPropulsion);
+		EnhancedInput->BindAction(BranchActions[2], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchWebEscape);
+		EnhancedInput->BindAction(BranchActions[3], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchMetabolism);
 	}
 }
 
@@ -343,7 +388,9 @@ void AMosquitoCharacter::Struggle()
 	{
 		return;
 	}
-	EscapeMeter = FMath::Max(0.f, EscapeMeter - WebEscapePerTap);
+	// MVP 0.2 §4: WebEscapeReflexes multiplies the per-tap damage.
+	const float EscapeMult = GameSave ? GameSave->GetWebEscapeMult() : 1.f;
+	EscapeMeter = FMath::Max(0.f, EscapeMeter - WebEscapePerTap * EscapeMult);
 	if (EscapeMeter <= 0.f)
 	{
 		EscapeWeb();
@@ -372,6 +419,44 @@ void AMosquitoCharacter::EscapeWeb()
 	WebRetakeImmunityTimer = WebRetakeImmunitySeconds;
 	UE_LOG(LogTemp, Log, TEXT("[Mosquito] ESCAPED the web - fly out fast (%.1f s retake immunity)"),
 		WebRetakeImmunitySeconds);
+}
+
+// --- MVP 0.2 §4: upgrade panel + run-branch purchases ---------------------------------
+
+void AMosquitoCharacter::OnToggleUpgradePanel(const FInputActionValue& Value)
+{
+	bUpgradePanelOpen = !bUpgradePanelOpen;
+	UE_LOG(LogTemp, Log, TEXT("[Progression] Upgrade panel %s (world keeps running)"),
+		bUpgradePanelOpen ? TEXT("OPEN") : TEXT("closed"));
+}
+
+static void BuyRunBranch(UMosquitoSimulatorGameInstance* GameSave, bool bPanelOpen, ERunBranch Branch)
+{
+	if (!bPanelOpen || !GameSave)
+	{
+		return; // purchase only while the panel is visible
+	}
+	GameSave->BuyRunUpgrade(Branch);
+}
+
+void AMosquitoCharacter::OnBuyBranchWingControl(const FInputActionValue& Value)
+{
+	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::WingControl);
+}
+
+void AMosquitoCharacter::OnBuyBranchPropulsion(const FInputActionValue& Value)
+{
+	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::MuscularPropulsion);
+}
+
+void AMosquitoCharacter::OnBuyBranchWebEscape(const FInputActionValue& Value)
+{
+	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::WebEscapeReflexes);
+}
+
+void AMosquitoCharacter::OnBuyBranchMetabolism(const FInputActionValue& Value)
+{
+	BuyRunBranch(GameSave, bUpgradePanelOpen, ERunBranch::Metabolism);
 }
 
 void AMosquitoCharacter::SetHealth(float NewValue)
@@ -464,7 +549,9 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 			Movement->Velocity = FVector::ZeroVector;
 		}
 		// Passive recovery vs. mash / gentle hold (owner decision: hold = ~0.3 of a tap).
-		float MeterDelta = WebEscapeRecoverPerSecond * DeltaTime;
+		// MVP 0.2 §4 layer B: WebResistantAdhesion lowers the passive re-glue rate.
+		const float AdhesionMult = GameSave ? GameSave->GetWebResistantAdhesionMult() : 1.f;
+		float MeterDelta = WebEscapeRecoverPerSecond * AdhesionMult * DeltaTime;
 		if (bStruggleHeld)
 		{
 			MeterDelta -= WebEscapeHoldPerSecond * DeltaTime;
@@ -549,9 +636,17 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 
 void AMosquitoCharacter::UpdateStats(float DeltaTime)
 {
+	// MVP 0.2 §4: 1 XP per live flying second (run layer, GameInstance-owned).
+	if (GameSave && !bIsLanded)
+	{
+		GameSave->AddXP(DeltaTime);
+	}
+
 	// Hunger burns faster in the air; resting on a host slows it down.
+	// MVP 0.2 §4: Metabolism run branch lowers the base hunger rate.
 	const float HungerMult = bIsLanded ? 0.5f : 1.f;
-	CurrentHunger = FMath::Clamp(CurrentHunger + HungerRatePerSecond * HungerMult * DeltaTime, 0.f, MaxHunger);
+	const float MetabolismMult = GameSave ? GameSave->GetMetabolismMult() : 1.f;
+	CurrentHunger = FMath::Clamp(CurrentHunger + HungerRatePerSecond * HungerMult * MetabolismMult * DeltaTime, 0.f, MaxHunger);
 
 	// Flying drains energy, resting on the host regenerates it (risk/reward).
 	if (bIsLanded)
@@ -585,6 +680,14 @@ void AMosquitoCharacter::UpdateStats(float DeltaTime)
 		else if (WingCondition < 50.f)
 		{
 			SpeedMult *= WingSpeedMult50;
+		}
+		// MVP 0.2 §4: run upgrades multiply right next to the canonical modifiers -
+		// MuscularPropulsion hits the same FlightSpeed term (canonical 150 stays put),
+		// WingControl only touches MaxAcceleration (handling, not top speed).
+		if (GameSave)
+		{
+			SpeedMult *= GameSave->GetPropulsionMult();
+			Movement->MaxAcceleration = BaseMaxAcceleration * GameSave->GetWingControlMult();
 		}
 		Movement->MaxFlySpeed = FlightSpeed * SpeedMult;
 	}
@@ -644,6 +747,13 @@ void AMosquitoCharacter::Respawn()
 	bStruggleHeld = false;
 	EscapeMeter = 1.f;
 	WebRetakeImmunityTimer = WebRetakeImmunitySeconds;
+	bUpgradePanelOpen = false;
+
+	// MVP 0.2 §4: the new mosquito starts the run at Level 1 (species bonuses apply in §5).
+	if (GameSave)
+	{
+		GameSave->ResetRunProgress();
+	}
 
 	// Prompt 12: restore all stats.
 	CurrentHealth = MaxHealth;
@@ -927,8 +1037,16 @@ void AMosquitoCharacter::CompleteBite()
 	PlayOneShot(BiteWave, BiteSamples); // Prompt 14: bite sound
 
 	const float Room = FMath::Max(0.f, MaxBlood - CurrentBlood);
-	const float Gained = FMath::Min(BloodGainPerBite, Room);
+	// MVP 0.2 §4 layer B: BloodEfficiency raises the per-bite gain cap multiplier.
+	const float EfficiencyMult = GameSave ? GameSave->GetBloodEfficiencyMult() : 1.f;
+	const float Gained = FMath::Min(BloodGainPerBite * EfficiencyMult, Room);
 	CurrentBlood = FMath::Clamp(CurrentBlood + Gained, 0.f, MaxBlood);
+
+	// MVP 0.2 §4: XP source - the blood actually drunk.
+	if (GameSave)
+	{
+		GameSave->AddXP(Gained);
+	}
 
 	if (AHumanCharacter* Human = LandedOnHuman.Get())
 	{
@@ -948,6 +1066,15 @@ void AMosquitoCharacter::AddScore(int32 Points)
 	}
 	CurrentScore = Points;
 	TotalScore += Points;
+
+	// MVP 0.2 §4 owner rule: Score CONVERTS to XP and feeds lifetime records
+	// (HUD keeps showing this run's TotalScore unchanged).
+	if (GameSave)
+	{
+		GameSave->AddXP(static_cast<float>(Points));
+		GameSave->AddLifetimeScore(Points);
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("[Mosquito] +%d points (total: %d)"), Points, TotalScore);
 }
 

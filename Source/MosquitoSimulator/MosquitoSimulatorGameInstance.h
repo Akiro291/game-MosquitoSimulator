@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
+#include "MosquitoProgressionTypes.h"
 #include "MosquitoSimulatorGameInstance.generated.h"
 
 /**
@@ -58,6 +59,16 @@ public:
 	void AddXP(float Amount);
 	bool TrySpendLevelUpPoint();
 
+	/** §4 layer A: run branch storage + purchase (Tab panel). Reset on Respawn (plan). */
+	int32 GetRunBranchLevel(ERunBranch Branch) const;
+	bool BuyRunUpgrade(ERunBranch Branch);
+
+	/** Per-level multipliers (plan constants). */
+	float GetWingControlMult() const;
+	float GetPropulsionMult() const;
+	float GetWebEscapeMult() const;
+	float GetMetabolismMult() const;
+
 	// --- Species / genetics (persisted, §4 layer B) ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Save|Species")
 	int32 UnspentSpeciesPoints = 0;
@@ -72,13 +83,21 @@ public:
 	int32 SpeciesExoskeleton = 0;
 
 	/** Current species branches are capped at 3 levels (plan §4 layer B: 2-3 levels). */
-	static constexpr int32 MaxSpeciesBranchLevel = 3;
+	static constexpr int32 MaxSpeciesBranchLevel = MosquitoProgression::MaxSpeciesBranchLevel;
 
-	bool BuySpeciesBranchLevel(int32& InOutBranchLevel);
+	int32 GetSpeciesBranchLevel(ESpeciesBranch Branch) const;
+	bool BuySpeciesBranchLevel(ESpeciesBranch Branch);
+	/** Multipliers applied by §4/§5 (death-screen purchases feed these). */
+	float GetBloodEfficiencyMult() const;
+	float GetWebResistantAdhesionMult() const;
+	float GetExoskeletonHpBonus() const;
 
 	void AddLifetimeScore(int32 Amount);
 	void MarkDeath() { ++TotalDeaths; bDirty = true; }
 	void SetBestChaseScoreIfHigher(int32 Score);
+
+	/** §4: a new mosquito always starts the run at Level 1 with empty branches. */
+	void ResetRunProgress();
 
 	/** +1 species point per 200 lifetime scores earned since the last award (post-death, §4). */
 	void AwardSpeciesPoints();
@@ -88,6 +107,9 @@ public:
 
 private:
 	int32 Version = 0;
+
+	/** §4 layer A run branch levels (in-memory only - never saved with the run). */
+	int32 RunBranchLevels[MosquitoProgression::MaxRunBranchLevel ? static_cast<int32>(ERunBranch::Metabolism) + 1 : 1] = {0, 0, 0, 0};
 
 	/** Lifetime score already converted into species points. */
 	int32 SpeciesAwardBaseScore = 0;
