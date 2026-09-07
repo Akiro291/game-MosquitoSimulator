@@ -1,0 +1,34 @@
+Using bundled DotNet SDK version: 10.0 win-x64
+Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" MosquitoSimulatorEditor Win64 Development -Project="d:\UnrealProjects\MosquitoSimulator 5.8\MosquitoSimulator.uproject" -WaitMutex
+Log file: C:\Users\Hazvi\AppData\Local\UnrealBuildTool\Log.txt
+Determining max actions to execute in parallel (6 physical cores, 12 logical cores)
+  Executing up to 6 processes, one per physical core
+Using 'git status' to determine working set for adaptive non-unity build (D:\UnrealProjects\MosquitoSimulator 5.8).
+UbaServer - Listening on 0.0.0.0:1345
+Available x64 toolchains (1):
+ * C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231
+    (Family=14.51.36231, FamilyRank=2, Version=14.51.36256, HostArchitecture=x64, ReleaseChannel=Latest, Architecture=x64)
+Visual Studio compiler version 14.51.36256 is newer than latest preferred version 14.50.35717. Please use caution as this compiler has not been heavily tested
+Building MosquitoSimulatorEditor...
+===== Toolchain Information =====
+Using ISPC compiler (E:\UE_5.8\Engine\Source\ThirdParty\Intel\ISPC\bin\Windows\ispc.exe)
+  Intel(r) Implicit SPMD Program Compiler (Intel(r) ISPC), 1.24.0 (build commit  @ 20250404, LLVM 18.1.2) 
+Using Visual Studio 14.51.36256 toolchain (C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231) and Windows 10.0.22621.0 SDK (C:\Program Files (x86)\Windows Kits\10).
+Warning: Visual Studio compiler 14.51.36256 is not a preferred version
+[Adaptive Build] Excluded from MosquitoSimulator unity file: HumanCharacter.cpp, MosquitoAudio.cpp, MosquitoCharacter.cpp, MosquitoHUD.cpp, MosquitoPaint.cpp, MosquitoSimulatorGameModeBase.cpp, MosquitoWorldBlockout.cpp
+=================================
+Using Unreal Build Accelerator local executor to run 4 action(s)
+  CPU 6 physical cores, 12 logical cores
+  Memory 31.89 GB physical, 33.88 GB/72.72 GB committed
+  UBA Storage capacity 40 GB
+[1/4] Compile [x64] MosquitoPaint.cpp
+[2/4] Link [x64] UnrealEditor-MosquitoSimulator.lib
+[3/4] Link [x64] UnrealEditor-MosquitoSimulator.dll
+[4/4] WriteMetadata MosquitoSimulatorEditor.target [NoUba]
+
+Total time in Unreal Build Accelerator local executor: 4.22 seconds
+Output binary: E:\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe
+
+Result: Succeeded
+Total execution time: 5.28 seconds
+Trace written to file C:\Users\Hazvi\AppData\Local\UnrealBuildTool\Trace.uba with size 5.8kb

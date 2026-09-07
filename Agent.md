@@ -1,18 +1,82 @@
-# Agent
+# Agent.md — Mosquito Simulator
 
-This document describes the agent's functionality and usage.
+Краткое описание проекта для AI-агента.
 
-## Overview
+## Что это за игра
 
-The agent is designed to perform various tasks based on user input. It can generate code, provide documentation, and run tests.
+**Mosquito Simulator** — 3D survival / stealth / simulator от лица комара (≈ 1–2 см) в дачном посёлке.
 
-## Capabilities
+Главная идея:
+> Для человека комар — мелкая раздражающая дрянь.  
+> Для комара человек — огромный опасный босс.
 
-- Code generation
-- Documentation
-- Testing
-- Task management
+## Основной цикл (MVP)
 
-## Usage
+Летать → найти взрослого человека → сесть → укусить → получить кровь → вызвать раздражение → попытаться не умереть → выжить.
 
-To use the agent, you can call it with specific commands or through an interface.
+## Текущая версия
+
+Мы добиваем **MVP 0.1**.
+
+Подробности смотри в:
+- `ai/CURRENT.md` — что делать прямо сейчас
+- `ai/PROGRESS.md` — живой журнал состояния
+- `ai/GDD.md` — полный дизайн
+- `ai/PROMPTS.md` — пошаговый план
+- `AGENTS.md` — правила работы агента
+# AGENTS.md — Mosquito Simulator
+
+Ты — AI-агент, который помогает разрабатывать игру **Mosquito Simulator** на Unreal Engine 5.8.2.
+
+## Обязательный стартовый ритуал (каждый новый чат)
+
+Перед любой задачей прочитай в указанном порядке:
+
+1. `ai/CURRENT.md` — что делать прямо сейчас
+2. `ai/PROGRESS.md` — текущее состояние проекта
+3. `ai/GDD.md` — дизайн и правила игры
+4. `ai/PROMPTS.md` — актуальные шаги (раздел «ПЛАН v0.1 РЕВИЗИЯ»)
+5. `ai/WORKFLOW.md` — как работать
+
+После чтения коротко напиши:
+- Текущий статус MVP 0.1
+- Что уже работает
+- Что осталось
+- Какой следующий конкретный шаг предлагаешь
+
+**Ничего не меняй в коде**, пока пользователь не подтвердит.
+
+## Жёсткие правила
+
+- Один запрос = один вертикальный шаг. Не пытайся сделать всю систему сразу.
+- Не переписывай уже работающий код без явной причины.
+- Не создавай дубликаты классов.
+- Масштаб мира: **1 uu = 1 cm**. Комар ≈ 1–2 см.
+- Всегда обновляй `ai/PROGRESS.md` в конце сессии (статус, проблемы, следующий шаг).
+- После изменений кода предлагай headless-проверку (рецепт есть в PROGRESS.md).
+- Сборка возможна **только при закрытом редакторе** (Live Coding блокирует).
+- Не лезь в Version 0.2+ (пауки, поколения, посёлок и т.д.), пока MVP 0.1 не пройдёт плейтест-гейт.
+
+## Стиль работы
+
+1. Analyze → Plan → Implement → Verify → Report
+2. Объясняй, что делаешь, простым языком.
+3. Если что-то непонятно в существующем коде — сначала исследуй, не угадывай.
+4. Если задача потенциально разрушительная — сначала объясни риск и попроси подтверждение.
+
+## Текущий приоритет (MVP 0.1)
+
+1. Prompt 11 — Chase Score
+2. Prompt 12 — Wing Damage & Death + Respawn
+3. Prompt 13 — Balance + Playtest Gate
+4. Prompt 14 — Минимальная полировка
+
+## Технические детали проекта
+
+- Движок: UE 5.8.2
+- Основной код: `Source/MosquitoSimulator/`
+- Карта: `/Game/Game/Maps/MainLevel`
+- Игрок: `AMosquitoCharacter`
+- Люди: `AHumanCharacter` (FSM Calm → Chase)
+- День/ночь: `ADayNightSystem`
+- HUD: `AMosquitoHUD` (debug)

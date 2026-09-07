@@ -6,12 +6,18 @@
 #include "MosquitoCharacter.h"
 #include "MosquitoSimulatorPlayerController.h"
 #include "MosquitoWorldBlockout.h"
+#include "MosquitoHUD.h"
 
 AMosquitoSimulatorGameModeBase::AMosquitoSimulatorGameModeBase()
 {
 	DefaultMap = NAME_None;
 	DefaultPawnClass = AMosquitoCharacter::StaticClass();
 	PlayerControllerClass = AMosquitoSimulatorPlayerController::StaticClass();
+
+	// QA MVP fix: the GameMode pushes its HUDClass to the player via
+	// ClientSetHUD() (AGameModeBase.cpp:892). It defaulted to the EMPTY AHUD,
+	// so the debug HUD never appeared in PIE even though DrawHUD was correct.
+	HUDClass = AMosquitoHUD::StaticClass();
 
 	// Same three spots where the static "human" props used to stand.
 	HumanSpawnPoints = {

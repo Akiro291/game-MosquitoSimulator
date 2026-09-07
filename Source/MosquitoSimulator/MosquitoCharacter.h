@@ -7,6 +7,9 @@
 #include "InputActionValue.h"
 #include "MosquitoCharacter.generated.h"
 
+class UAudioComponent;
+class USoundWaveProcedural;
+
 class USpringArmComponent;
 class UCameraComponent;
 class UStaticMeshComponent;
@@ -88,6 +91,10 @@ public:
 		return (BiteDuration > 0.f) ? FMath::Clamp(BiteProgress / BiteDuration, 0.f, 1.f) : 0.f;
 	}
 
+	/** Prompt 14: HUD readability - distance to the nearest human in meters. */
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Bite")
+	float GetNearestHumanDistanceMeters() const { return NearestHumanDistance * 0.01f; }
+
 	UFUNCTION(BlueprintCallable, Category = "Mosquito")
 	void SetHealth(float NewValue);
 
@@ -107,6 +114,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Mosquito")
 	void ApplySwatHit(float Damage, const FVector& PushImpulse);
 
+	// --- Prompt 11: Chase Score ---
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Score")
+	int32 GetCurrentScore() const { return CurrentScore; }
+
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Score")
+	int32 GetTotalScore() const { return TotalScore; }
+
+	UFUNCTION(BlueprintCallable, Category = "Mosquito|Score")
+	void AddScore(int32 Points);
+
+	// --- Prompt 12: Death & Respawn ---
+	UFUNCTION(BlueprintCallable, Category = "Mosquito")
+	void Die();
+
+	UFUNCTION(BlueprintCallable, Category = "Mosquito")
+	void Respawn();
+
+	UFUNCTION(BlueprintPure, Category = "Mosquito")
+	bool IsDead() const { return bDead; }
+
 protected:
 	/** Flight input callbacks (Enhanced Input). */
 	void MoveForward(const FInputActionValue& Value);
@@ -121,34 +148,45 @@ protected:
 	// --- Prompt 9: bite & blood ---
 	void UpdateStats(float DeltaTime);
 	void DetectNearbyHumans();
+	void ResolvePawnPenetration();
 	void StickToLandedHuman();
 	void LandOn(AHumanCharacter* Human);
 	void TakeOff();
 	void StartBite();
 	void CompleteBite();
 
+	// --- Prompt 14: procedural audio (no assets) ---
+	void InitAudio();
+	void UpdateBuzz(float DeltaTime);
+	void PlayOneShot(USoundWaveProcedural* Wave, const TArray<int16>& Samples);
+
 	// --- Bite tuning ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Bite")
 	float LandDistance = 85.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Bite")
-	float BiteDuration = 0.75f;
+	float BiteDuration = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Bite")
-	float BloodGainPerBite = 12.f;
+	float BloodGainPerBite = 15.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Bite")
 	float BiteCooldown = 0.5f;
 
+	// --- Collision v2: manual depenetration vs Human (mosquito-only correction) ---
+	/** Overlap query runs only while the nearest human is closer than this (cm). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito|Collision")
+	float PawnPenetrationQueryRadius = 150.f;
+
 	// --- Stat tick tuning ---
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")
-	float HungerRatePerSecond = 0.7f;
+	float HungerRatePerSecond = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")
-	float EnergyDrainFlyingPerSecond = 1.2f;
+	float EnergyDrainFlyingPerSecond = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")
-	float EnergyRegenLandedPerSecond = 2.f;
+	float EnergyRegenLandedPerSecond = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mosquito|Stats")
 	float BloodBurnHungerThreshold = 80.f;
@@ -171,6 +209,44 @@ protected:
 	float NearestHumanDistance = TNumericLimits<float>::Max();
 	bool bLoggedExhausted = false;
 	bool bLoggedStarving = false;
+
+	// --- Prompt 14: procedural audio (48 kHz mono, synthesized, no assets) ---
+	UPROPERTY(Transient) TObjectPtr<USoundWaveProcedural> BuzzWave = nullptr;
+	UPROPERTY(Transient) TObjectPtr<USoundWaveProcedural> BiteWave = nullptr;
+	UPROPERTY() TObjectPtr<UAudioComponent> BuzzAudio = nullptr;
+	UPROPERTY() TObjectPtr<UAudioComponent> SfxAudio = nullptr;
+	TArray<int16> BiteSamples;
+	double BuzzPhase = 0.0;
+	double BuzzTremPhase = 0.0;
+	int64 BuzzSampleCount = 0;
+	float BuzzAmp = 0.f;
+	float BuzzFreq = 220.f;
+	float SwatShakeImpulseDeg = 0.f; // QA MVP: one-shot camera kick on SWAT
+
+	// --- Prompt 11: Chase Score ---
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Mosquito|Score")
+	int32 CurrentScore = 0;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Mosquito|Score")
+	int32 TotalScore = 0;
+
+	// --- Prompt 12: Death & Respawn ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito")
+	float RespawnDelay = 2.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito|Wings")
+	float WingSpeedMult50 = 0.7f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito|Wings")
+	float WingSpeedMult25 = 0.4f;
+
+	float DeathTimer = 0.f;
+	bool bDead = false;
+
+	// Prompt 13: SWAT recovery & immunity
+	float SwatRecoverTimer = 0.f;
+	bool bSwatRecovering = false;
+	float SwatImmunityTimer = 0.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito")
 	float MaxHealth = 100.f;
@@ -197,7 +273,7 @@ protected:
 	float CurrentHunger = 30.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mosquito")
-	float FlightSpeed = 120.f;
+	float FlightSpeed = 150.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mosquito")
 	float NoiseLevel = 0.2f;

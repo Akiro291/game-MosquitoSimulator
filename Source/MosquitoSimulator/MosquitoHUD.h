@@ -19,6 +19,8 @@ class MOSQUITOSIMULATOR_API AMosquitoHUD : public AHUD
 public:
 	AMosquitoHUD();
 
+	virtual void BeginPlay() override;
+
 	virtual void DrawHUD();
 
 	/** Prompt 10/12: red damage flash, fades over FlashDuration. */
@@ -31,6 +33,7 @@ protected:
 	void DrawClock();
 	void DrawBiteProgress();
 	void DrawCrosshair();
+	void DrawScore();
 
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	float BarWidth = 140.f;
@@ -54,4 +57,5 @@ private:
 	float FlashAlpha = 0.f;
 	float FlashDuration = 0.4f;
 	float FlashTimer = 0.f;
+	bool bLoggedFirstDraw = false;
 };

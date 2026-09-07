@@ -41,6 +41,9 @@ private:
 	UStaticMeshComponent* MakeSphere(const FName& Name, const FVector& Scale, const FVector& Location);
 	UStaticMeshComponent* MakePlane(const FName& Name, const FVector& Scale, const FVector& Location);
 
+	/** Prompt 14: tints every blockout primitive via the engine BasicShapeMaterial BaseColor parameter. */
+	void ApplyBlockoutColors();
+
 	UPROPERTY()
 	TObjectPtr<UDirectionalLightComponent> Sun;
 };

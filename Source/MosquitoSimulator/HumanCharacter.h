@@ -1,4 +1,4 @@
-// Copyright your name. All Rights Reserved.
+﻿// Copyright your name. All Rights Reserved.
 
 #pragma once
 
@@ -7,6 +7,8 @@
 #include "HumanCharacter.generated.h"
 
 class AMosquitoCharacter;
+class UAudioComponent;
+class USoundWaveProcedural;
 class UStaticMeshComponent;
 class USceneComponent;
 
@@ -62,19 +64,19 @@ public:
 protected:
 	// --- Tuning: perception & irritation ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|State")
-	float AttackCooldown = 2.0f;
+	float AttackCooldown = 2.8f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|State")
-	float DetectionRadius = 350.f;
+	float DetectionRadius = 300.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|State")
-	float CloseProximityRadius = 140.f;
+	float CloseProximityRadius = 120.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|State")
-	float IrritationProximitySeconds = 4.f;
+	float IrritationProximitySeconds = 3.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|State")
-	float IrritationDecaySeconds = 6.f;
+	float IrritationDecaySeconds = 8.f;
 
 	// --- Tuning: attack ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Attack")
@@ -84,13 +86,21 @@ protected:
 	float AttackTriggerRange = 220.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Attack")
-	float SwatDamage = 10.f;
+	float SwatDamage = 6.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Attack")
-	float SwatPushStrength = 260.f;
+	float SwatPushStrength = 120.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Attack")
 	float ArmSwingDuration = 0.5f;
+
+	// --- Prompt 14: procedural audio + readable placeholder colors ---
+	void InitClapSound();
+	void ApplyVisualColors();
+
+	UPROPERTY(Transient) TObjectPtr<USoundWaveProcedural> ClapWave = nullptr;
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> SfxAudio = nullptr;
+	TArray<int16> ClapSamples;
 
 	// --- Tuning: movement (1 uu = 1 cm) ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Movement")
@@ -100,7 +110,7 @@ protected:
 	float WalkSpeedAngry = 150.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Movement")
-	float ChaseSpeed = 380.f;
+	float ChaseSpeed = 340.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Movement")
 	float TurnSpeed = 240.f;
@@ -109,10 +119,10 @@ protected:
 	float SearchTurnSpeed = 120.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Chase")
-	float LoseChaseDistance = 1200.f;
+	float LoseChaseDistance = 900.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Chase")
-	float ChaseGiveUpTime = 8.f;
+	float ChaseGiveUpTime = 5.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Human|Wander")
 	float WanderRadius = 250.f;
@@ -157,6 +167,9 @@ private:
 	void UpdateArmAnimation(float DeltaTime);
 	void RefreshStateFromIrritation();
 	AMosquitoCharacter* GetMosquito() const;
+	void OnChaseStarted();
+	void OnChaseEnded();
+	int32 CalculateChaseScore(float Duration) const;
 
 	// --- Runtime (non-UPROPERTY) ---
 	float NextAttackTime = 0.f;
@@ -166,6 +179,9 @@ private:
 	float WanderTimer = 0.f;
 	float ArmSwingTimer = 0.f;
 	float DistanceToMosquito = TNumericLimits<float>::Max();
+	float ChaseTimer = 0.f;
+	int32 LastChaseScore = 0;
+	float ChaseDiagTimer = 0.f;   // temp: chase movement diagnostics (0.5 s interval)
 
 	bool bArmSwinging = false;
 	bool bHasWanderTarget = false;

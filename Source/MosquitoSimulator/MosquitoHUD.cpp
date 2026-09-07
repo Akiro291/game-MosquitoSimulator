@@ -17,6 +17,16 @@ AMosquitoHUD::AMosquitoHUD()
 	FlashTimer = 0.f;
 }
 
+void AMosquitoHUD::BeginPlay()
+{
+	Super::BeginPlay();
+	// QA MVP: proves in any log that the debug HUD actually spawned.
+	UE_LOG(LogTemp, Log, TEXT("[MosquitoHUD] Active: Canvas=%s Viewport=%dx%d"),
+		Canvas ? TEXT("OK") : TEXT("NULL"),
+		Canvas ? static_cast<int32>(Canvas->SizeX) : 0,
+		Canvas ? static_cast<int32>(Canvas->SizeY) : 0);
+}
+
 void AMosquitoHUD::FlashDamage()
 {
 	FlashAlpha = 1.f;
@@ -61,6 +71,8 @@ void AMosquitoHUD::DrawBar(const FString& Label, float Current, float Max, int32
 	const float ClampedCurrent = FMath::Clamp(Current, 0.f, Max);
 	const float Filled = (Max > 0.f) ? (ClampedCurrent / Max) : 0.f;
 
+	// Prompt 14: black outline + dark chip for contrast on any scene.
+	DrawRect(FLinearColor::Black, X - 1.f, Y - 1.f, BarWidth + 2.f, BarHeight + 2.f);
 	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), X, Y, BarWidth, BarHeight);
 
 	if (Filled > 0.f)
@@ -68,8 +80,10 @@ void AMosquitoHUD::DrawBar(const FString& Label, float Current, float Max, int32
 		DrawRect(Color, X, Y, BarWidth * Filled, BarHeight);
 	}
 
-	const FString Text = FString::Printf(TEXT("%s: %d/%d"), *Label, FMath::RoundToInt(ClampedCurrent), FMath::RoundToInt(Max));
-	DrawText(Text, FLinearColor::White, X + 4.f, Y - 14.f, GEngine->GetSmallFont());
+	// Numeric value above the bar, colored label to the right of it.
+	DrawText(FString::Printf(TEXT("%d"), FMath::RoundToInt(ClampedCurrent)),
+		FLinearColor::White, X + 4.f, Y - 14.f, GEngine->GetSmallFont());
+	DrawText(Label, Color, X + BarWidth + 6.f, Y - 1.f, GEngine->GetSmallFont());
 }
 
 void AMosquitoHUD::DrawHumanState()
@@ -82,18 +96,30 @@ void AMosquitoHUD::DrawHumanState()
 		return;
 	}
 
+	const float X = BarAnchorX;
+	const float Y = BarAnchorY + 8 * BarSpacing;
+	const float W = 280.f;
+	const float H = 26.f;
+
+	// Prompt 14: bigger font, distance in meters, colored state chip.
+	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), X, Y, W, H);
 	if (AHumanCharacter* Nearest = Mosquito->GetNearestHuman())
 	{
 		const EHumanState State = Nearest->GetCurrentState();
-		const FString Text = FString::Printf(TEXT("Nearest: %s (%d/4)"),
-			*HumanStateToString(State), Nearest->GetIrritationLevel());
-		DrawText(Text, HumanStateToColor(State), BarAnchorX, BarAnchorY + 6 * BarSpacing, GEngine->GetSmallFont());
+		const FLinearColor StateColor = HumanStateToColor(State);
+		const FString Text = FString::Printf(TEXT("Human: %s  [%d/4]  %.1f m"),
+			*HumanStateToString(State), Nearest->GetIrritationLevel(),
+			Mosquito->GetNearestHumanDistanceMeters());
+
+		DrawRect(StateColor, X, Y, 5.f, H);
+		DrawText(Text, StateColor, X + 12.f, Y + 3.f, GEngine->GetMediumFont());
 	}
 	else
 	{
-DrawText(TEXT("Nearest: ---`"), FLinearColor::White, BarAnchorX, BarAnchorY + 6 * BarSpacing, GEngine->GetSmallFont());
+		DrawText(TEXT("Human: ---"), FLinearColor::White, X + 12.f, Y + 3.f, GEngine->GetMediumFont());
 	}
 }
+
 void AMosquitoHUD::DrawClock()
 {
 	if (!Canvas)
@@ -174,6 +200,27 @@ void AMosquitoHUD::DrawCrosshair()
 	DrawRect(C, CX - 0.5f, CY + G, 1.f, L - G);
 }
 
+void AMosquitoHUD::DrawScore()
+{
+	AMosquitoCharacter* Mosquito = Cast<AMosquitoSimulatorPlayerController>(Owner) ?
+		Cast<AMosquitoCharacter>(Cast<AMosquitoSimulatorPlayerController>(Owner)->GetPawn()) : nullptr;
+
+	if (!Mosquito || !Canvas)
+	{
+		return;
+	}
+
+	const float ScoreX = Canvas->SizeX - 200.f;
+	const float ScoreY = BarAnchorY + 46.f;
+
+	// Prompt 14: chip background so the score stays readable over bright sky.
+	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.8f), ScoreX - 8.f, ScoreY - 8.f, 192.f, 56.f);
+	DrawText(FString::Printf(TEXT("Last chase: %d"), Mosquito->GetCurrentScore()),
+		FLinearColor(1.f, 0.8f, 0.2f), ScoreX, ScoreY, GEngine->GetSmallFont());
+	DrawText(FString::Printf(TEXT("Total: %d"), Mosquito->GetTotalScore()),
+		FLinearColor(1.f, 0.9f, 0.4f), ScoreX, ScoreY + 22.f, GEngine->GetMediumFont());
+}
+
 void AMosquitoHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -181,6 +228,13 @@ void AMosquitoHUD::DrawHUD()
 	if (!Canvas)
 	{
 		return;
+	}
+
+	if (!bLoggedFirstDraw)
+	{
+		bLoggedFirstDraw = true;
+		UE_LOG(LogTemp, Log, TEXT("[MosquitoHUD] First draw: Canvas=%dx%d - debug HUD is rendering"),
+			Canvas->SizeX, Canvas->SizeY);
 	}
 
 	if (FlashAlpha > 0.f)
@@ -199,12 +253,24 @@ void AMosquitoHUD::DrawHUD()
 		DrawBar(TEXT("Blood"), Mosquito->GetBlood(), Mosquito->GetMaxBlood(), 1, FLinearColor(0.8f, 0.2f, 0.4f));
 		DrawBar(TEXT("Energy"), Mosquito->GetEnergy(), Mosquito->GetMaxEnergy(), 2, FLinearColor(0.2f, 0.6f, 1.f));
 		DrawBar(TEXT("Hunger"), Mosquito->GetHunger(), Mosquito->GetMaxHunger(), 3, FLinearColor(1.f, 0.7f, 0.1f));
-		DrawBar(TEXT("Wings"), Mosquito->GetWingCondition(), Mosquito->GetMaxWingCondition(), 4, FLinearColor(0.2f, 0.9f, 0.4f));
+		// Prompt 14: the wings bar turns orange/red as the wings wear out.
+		const float Wings = Mosquito->GetWingCondition();
+		const FLinearColor WingColor = (Wings < 25.f) ? FLinearColor(1.f, 0.2f, 0.1f)
+			: ((Wings < 50.f) ? FLinearColor(1.f, 0.7f, 0.1f) : FLinearColor(0.2f, 0.9f, 0.4f));
+		DrawBar(TEXT("Wing HP"), Wings, Mosquito->GetMaxWingCondition(), 4, WingColor);
+
+		// Prompt 12: show death overlay.
+		if (Mosquito->IsDead())
+		{
+			const FString DeadText = TEXT("DEAD — respawning...");
+			DrawText(DeadText, FLinearColor::Red, Canvas->SizeX * 0.5f - 80.f, Canvas->SizeY * 0.5f, GEngine->GetLargeFont());
+		}
 	}
 
 	DrawHumanState();
 	DrawClock();
 	DrawBiteProgress();
+	DrawScore();
 	DrawCrosshair();
 }
 

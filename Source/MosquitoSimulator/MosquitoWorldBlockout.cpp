@@ -9,12 +9,18 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "MosquitoPaint.h"
+#include "Materials/MaterialInterface.h"
 
 AMosquitoWorldBlockout::AMosquitoWorldBlockout()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	// QA MVP: static root so the static primitive meshes can attach without
+	// the 10x "cannot attach static to non-static" PIE warnings (actor never moves).
+	Root->SetMobility(EComponentMobility::Static);
 	SetRootComponent(Root);
 
 	// All sizes assume 1 uu = 1 cm.
@@ -79,6 +85,9 @@ void AMosquitoWorldBlockout::BeginPlay()
 				NewStart ? TEXT("spawned at (0,0,120)") : TEXT("spawn FAILED"));
 		}
 	}
+
+	// Prompt 14: paint the primitives so the world reads visually.
+	ApplyBlockoutColors();
 
 	UE_LOG(LogTemp, Log, TEXT("[MosquitoBlockout] Blockout village ready (1 uu = 1 cm)"));
 }
@@ -148,4 +157,44 @@ UStaticMeshComponent* AMosquitoWorldBlockout::MakePlane(const FName& Name, const
 	Comp->SetRelativeScale3D(Scale); // engine plane is 100 x 100 uu
 	Comp->SetMobility(EComponentMobility::Static);
 	return Comp;
+}
+
+void AMosquitoWorldBlockout::ApplyBlockoutColors()
+{
+	// GetComponents() instead of walking AttachChildren: robust regardless of
+	// attachment timing (AttachChildren can still be empty at BeginPlay).
+	TArray<UStaticMeshComponent*> Meshes;
+	GetComponents<UStaticMeshComponent>(Meshes);
+	if (Meshes.Num() == 0)
+	{
+		return;
+	}
+
+	// The engine BasicShapeMaterial exposes a BaseColor VectorParameter.
+	const FLinearColor Grass  (0.25f, 0.55f, 0.22f);
+	const FLinearColor Wall   (0.78f, 0.65f, 0.46f);
+	const FLinearColor Wood   (0.50f, 0.32f, 0.16f);
+	const FLinearColor Metal  (0.58f, 0.63f, 0.70f);
+	const FLinearColor Bark   (0.40f, 0.27f, 0.15f);
+	const FLinearColor Foliage(0.18f, 0.52f, 0.20f);
+
+	int32 Painted = 0;
+	for (UStaticMeshComponent* Mesh : Meshes)
+	{
+
+		const FName N = Mesh->GetFName();
+		FLinearColor Color;
+		if      (N == FName(TEXT("Ground")))                              Color = Grass;
+		else if (N == FName(TEXT("House")))                               Color = Wall;
+		else if (N == FName(TEXT("TableTop")) || N == FName(TEXT("TableLeg"))) Color = Wood;
+		else if (N == FName(TEXT("WaterBucket")) || N == FName(TEXT("WaterBarrel"))) Color = Metal;
+		else if (N.ToString().StartsWith(TEXT("TreeTrunk")))              Color = Bark;
+		else if (N.ToString().StartsWith(TEXT("TreeCrown")))              Color = Foliage;
+		else                                                              continue;
+
+		MosquitoPaint::PaintMesh(Mesh, Color);
+		++Painted;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[MosquitoBlockout] Colors painted on %d components"), Painted);
 }

@@ -1,4 +1,4 @@
-// Copyright your name. All Rights Reserved.
+﻿// Copyright your name. All Rights Reserved.
 
 #include "HumanCharacter.h"
 
@@ -9,6 +9,10 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "MosquitoCharacter.h"
+#include "Components/AudioComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "MosquitoAudio.h"
+#include "MosquitoPaint.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -46,6 +50,9 @@ AHumanCharacter::AHumanCharacter()
 		Movement->bOrientRotationToMovement = true;
 		Movement->RotationRate = FRotator(0.f, TurnSpeed, 0.f);
 		Movement->MaxWalkSpeed = WalkSpeedCalm;
+		// NPC has no Controller: without this flag PerformMovement() is skipped
+		// entirely (see UCharacterMovementComponent::PerformMovement gate).
+		Movement->bRunPhysicsWithNoController = true;
 	}
 
 	// --- Placeholder visuals: cylinder body + sphere head + a swinging box arm ---
@@ -87,6 +94,11 @@ AHumanCharacter::AHumanCharacter()
 	ArmMesh->SetRelativeLocation(FVector(0.f, 0.f, -22.f));
 	ArmMesh->SetRelativeScale3D(FVector(0.06f, 0.06f, 0.5f)); // 6 x 6 x 50 cm arm
 	ArmMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// --- Prompt 14: procedural audio (no assets) ---
+	SfxAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("SfxAudio"));
+	SfxAudio->SetupAttachment(GetCapsuleComponent());
+	SfxAudio->bAutoActivate = false;
 }
 
 void AHumanCharacter::BeginPlay()
@@ -95,6 +107,10 @@ void AHumanCharacter::BeginPlay()
 
 	HomeLocation = GetActorLocation();
 	RefreshStateFromIrritation();
+
+	// Prompt 14: procedural clap + readable placeholder colors.
+	InitClapSound();
+	ApplyVisualColors();
 
 	UE_LOG(LogTemp, Log, TEXT("[Human] Spawned at (%.0f, %.0f, %.0f) state=%s detection=%.0f cm"),
 		HomeLocation.X, HomeLocation.Y, HomeLocation.Z,
@@ -177,6 +193,36 @@ void AHumanCharacter::UpdateStateMachine(float DeltaTime)
 		return;
 	}
 
+	// ROOT-CAUSE FIX: StopMovementAndClearWander() used to call
+	// StopMovementImmediately(), which internally does DisableMovement() ->
+	// SetMovementMode(MOVE_None). In MOVE_None AddMovementInput() is a silent
+	// no-op, so after passing through Noticed/Irritated the human could never
+	// move again (diag showed mode=0, vel=0, accel=0 forever). Re-enable
+	// walking if the component was left disabled by any legacy code path.
+	if (Movement->MovementMode == MOVE_None)
+	{
+		Movement->SetMovementMode(MOVE_Walking);
+		}
+
+	// ---- TEMP DIAGNOSTICS: actual movement, every 0.5 s in ANY state ----
+	// (FINAL HOTFIX: downgraded to Verbose so it no longer spams the Output Log;
+	//  enable via "log LogTemp VeryVerbose" to inspect.)
+	ChaseDiagTimer += DeltaTime;
+	if (ChaseDiagTimer >= 0.5f)
+	{
+		ChaseDiagTimer = 0.f;
+		UE_LOG(LogTemp, Verbose,
+			TEXT("[Human::DIAG] t=%.2f state=%s loc=(%.1f,%.1f,%.1f) | vel=(%.1f,%.1f,%.1f)|%.1f cm/s | accel=(%.1f,%.1f,%.1f)|%.1f | mode=%d moveGround=%d ctrl=%s"),
+			GetWorld()->GetTimeSeconds(),
+			StateToString(CurrentState),
+			GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z,
+			GetVelocity().X, GetVelocity().Y, GetVelocity().Z, GetVelocity().Size(),
+			Movement->GetCurrentAcceleration().X, Movement->GetCurrentAcceleration().Y, Movement->GetCurrentAcceleration().Z, Movement->GetCurrentAcceleration().Size(),
+			(int32)Movement->MovementMode,
+			Movement->IsMovingOnGround() ? 1 : 0,
+			GetController() ? TEXT("yes") : TEXT("no"));
+	}
+
 	switch (CurrentState)
 	{
 	case EHumanState::Calm:
@@ -239,19 +285,35 @@ void AHumanCharacter::UpdateStateMachine(float DeltaTime)
 	{
 		// CHASE MODE: sprint at the mosquito and swat on cooldown.
 		Movement->MaxWalkSpeed = ChaseSpeed;
+		Movement->bOrientRotationToMovement = false;  // Manual facing via FaceTowards
+
+		// Prompt 11: tick the chase timer for scoring.
+		ChaseTimer += DeltaTime;
+
 		if (bHasLastKnown)
 		{
 			FVector ToTarget = LastKnownMosquitoPos - GetActorLocation();
 			ToTarget.Z = 0.f;
-			if (ToTarget.Size() > 40.f)
+			// Always face the target (even when close) вЂ” makes chase feel more aggressive.
+			FaceTowards(LastKnownMosquitoPos, DeltaTime);
+
+			if (ToTarget.Size() > 20.f)
 			{
-				AddMovementInput(ToTarget.GetSafeNormal());
+				FVector MoveDir = ToTarget.GetSafeNormal();
+				AddMovementInput(MoveDir);
+				UE_LOG(LogTemp, Verbose, TEXT("[Human::Chase] *** MOVING *** dir=(%.2f,%.2f), target=(%.0f,%.0f,%.0f)"), MoveDir.X, MoveDir.Y, LastKnownMosquitoPos.X, LastKnownMosquitoPos.Y, LastKnownMosquitoPos.Z);
 			}
 			else if (!bMosquitoDetected)
 			{
+				// Search around when reached last known position but mosquito not visible.
 				SetActorRotation(GetActorRotation() + FRotator(0.f, SearchTurnSpeed * DeltaTime, 0.f));
 			}
 		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Human::Chase] CANNOT MOVE: bHasLastKnown=false!"));
+		}
+
 		if (DistanceToMosquito <= AttackTriggerRange)
 		{
 			PerformAttack();
@@ -322,7 +384,12 @@ void AHumanCharacter::StopMovementAndClearWander()
 	bHasWanderTarget = false;
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
-		Movement->StopMovementImmediately();
+		// ROOT-CAUSE FIX: StopMovementImmediately() internally calls
+		// DisableMovement() which permanently sets MOVE_None вЂ” after that
+		// AddMovementInput() never worked again (no movement in Angry/Chase).
+		// Kill the speed WITHOUT disabling the movement component instead.
+		Movement->Velocity = FVector::ZeroVector;
+		Movement->UpdateComponentVelocity();
 	}
 }
 
@@ -372,6 +439,14 @@ void AHumanCharacter::PerformAttack()
 	bArmSwinging = true;
 	ArmSwingTimer = 0.f;
 
+	// Prompt 14: procedural clap - audible even when the swat misses.
+	if (SfxAudio && ClapWave && ClapSamples.Num() > 0)
+	{
+		ClapWave->ResetAudio();
+		MosquitoAudio::QueueSamples(ClapWave, ClapSamples);
+		SfxAudio->Play();
+	}
+
 	AMosquitoCharacter* Mosquito = GetMosquito();
 	if (!Mosquito)
 	{
@@ -381,7 +456,7 @@ void AHumanCharacter::PerformAttack()
 	const float Dist = FVector::Dist(GetActorLocation(), Mosquito->GetActorLocation());
 	if (Dist <= AttackRange)
 	{
-		// The clap sends an air wave away from the human (GDD: "хлопок создаёт воздушную волну").
+		// The clap sends an air wave away from the human (GDD: "С…Р»РѕРїРѕРє СЃРѕР·РґР°С‘С‚ РІРѕР·РґСѓС€РЅСѓСЋ РІРѕР»РЅСѓ").
 		FVector PushDir = Mosquito->GetActorLocation() - GetActorLocation();
 		PushDir.Z = 0.f;
 		PushDir = PushDir.GetSafeNormal();
@@ -415,8 +490,48 @@ void AHumanCharacter::RefreshStateFromIrritation()
 	{
 		return;
 	}
+
+	const EHumanState OldState = CurrentState;
 	CurrentState = NewState;
 	UE_LOG(LogTemp, Log, TEXT("[Human] State -> %s (irritation %d)"), StateToString(CurrentState), IrritationLevel);
+
+	// Prompt 11: detect Chase transitions for scoring.
+	if (OldState == EHumanState::Chase && NewState != EHumanState::Chase)
+	{
+		OnChaseEnded();
+	}
+	else if (NewState == EHumanState::Chase && OldState != EHumanState::Chase)
+	{
+		OnChaseStarted();
+	}
+}
+
+void AHumanCharacter::OnChaseStarted()
+{
+	ChaseTimer = 0.f;
+	UE_LOG(LogTemp, Log, TEXT("[Human] Chase started"));
+}
+
+void AHumanCharacter::OnChaseEnded()
+{
+	LastChaseScore = CalculateChaseScore(ChaseTimer);
+	UE_LOG(LogTemp, Log, TEXT("[Human] Chase ended after %.1f sec -> +%d points"), ChaseTimer, LastChaseScore);
+
+	// Prompt 11: award points to the mosquito.
+	if (AMosquitoCharacter* Mosquito = GetMosquito())
+	{
+		Mosquito->AddScore(LastChaseScore);
+	}
+}
+
+int32 AHumanCharacter::CalculateChaseScore(float Duration) const
+{
+	// Prompt 11: step function based on GDD table.
+	if (Duration >= 120.f) return 500;
+	if (Duration >= 60.f)  return 150;
+	if (Duration >= 30.f)  return 50;
+	if (Duration >= 10.f)  return 10;
+	return 0;
 }
 
 void AHumanCharacter::OnBitten(float BloodAmount)
@@ -425,4 +540,32 @@ void AHumanCharacter::OnBitten(float BloodAmount)
 	// future human ecology (fatigue, blood taste, ...).
 	SetIrritationLevel(IrritationLevel + 1);
 	UE_LOG(LogTemp, Log, TEXT("[Human] Bitten (%.0f blood) -> irritation %d"), BloodAmount, IrritationLevel);
+}
+
+// --- Prompt 14: procedural audio + readable colors --------------------------
+
+void AHumanCharacter::InitClapSound()
+{
+	if (!SfxAudio)
+	{
+		return;
+	}
+
+	ClapWave = MosquitoAudio::MakeOneShotWave(this, MosquitoAudio::GenerateClap(ClapSamples));
+	SfxAudio->SetSound(ClapWave);
+
+	UE_LOG(LogTemp, Log, TEXT("[Human] Procedural clap ready (%d samples @ %d Hz, no assets)"), ClapSamples.Num(), MosquitoAudio::SampleRate);
+}
+
+void AHumanCharacter::ApplyVisualColors()
+{
+	// Prompt 14: tint the placeholder primitives so people read as people.
+	const auto Paint = [](UStaticMeshComponent* MeshComp, const FLinearColor& Color)
+	{
+		MosquitoPaint::PaintMesh(MeshComp, Color); // QA MVP: correct param name
+	};
+
+	Paint(BodyMesh, FLinearColor(0.22f, 0.38f, 0.72f)); // shirt
+	Paint(HeadMesh, FLinearColor(0.92f, 0.76f, 0.62f)); // skin
+	Paint(ArmMesh,  FLinearColor(0.92f, 0.76f, 0.62f)); // skin
 }
