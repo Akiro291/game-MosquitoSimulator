@@ -229,6 +229,47 @@ static UMosquitoSimulatorGameInstance* GetGameSave(const AHUD* Hud)
 	return World ? World->GetGameInstance<UMosquitoSimulatorGameInstance>() : nullptr;
 }
 
+void AMosquitoHUD::DrawWebStatus(AMosquitoCharacter* Mosquito)
+{
+	if (!Mosquito || !Canvas)
+	{
+		return;
+	}
+
+	const float CX = Canvas->SizeX * 0.5f;
+
+	if (Mosquito->IsTrapped())
+	{
+		// Plan §3.1: red plate + centered horizontal EscapeMeter bar.
+		const float W = 300.f;
+		const float H = 16.f;
+		const float X = CX - W * 0.5f;
+		const float Y = Canvas->SizeY * 0.35f;
+
+		const bool bBlink = FMath::FloorToInt(GetWorld()->GetTimeSeconds() * 4.f) % 2 == 0;
+		DrawRect(bBlink ? FLinearColor(0.75f, 0.05f, 0.05f) : FLinearColor(0.45f, 0.04f, 0.04f),
+			X, Y - 26.f, W, 20.f);
+		DrawText(TEXT("TRAPPED - MASH R!"), FLinearColor::White, X + 8.f, Y - 23.f, GEngine->GetSmallFont());
+
+		DrawRect(FLinearColor::Black, X - 1.f, Y - 1.f, W + 2.f, H + 2.f);
+		DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.85f), X, Y, W, H);
+		DrawRect(FLinearColor(0.9f, 0.2f, 0.15f), X, Y, W * (1.f - Mosquito->GetEscapeProgress01()), H);
+		DrawText(TEXT("ESCAPE"), FLinearColor::White, X + W + 8.f, Y, GEngine->GetSmallFont());
+		return;
+	}
+
+	if (Mosquito->GetNearestSpiderDistance() <= 250.f)
+	{
+		const FString Chip = FString::Printf(TEXT("WEB AHEAD (%.1f m)"),
+			Mosquito->GetNearestSpiderDistance() * 0.01f);
+		const float W = 220.f;
+		const float X = CX - W * 0.5f;
+		const float Y = Canvas->SizeY * 0.25f;
+		DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), X, Y, W, 20.f);
+		DrawText(Chip, FLinearColor(1.f, 0.45f, 0.2f), X + 10.f, Y + 2.f, GEngine->GetMediumFont());
+	}
+}
+
 void AMosquitoHUD::DrawRunProgress(AMosquitoCharacter* Mosquito)
 {
 	if (!Mosquito || !Canvas)
@@ -418,6 +459,7 @@ void AMosquitoHUD::DrawHUD()
 	DrawBiteProgress();
 	DrawScore();
 	DrawRunProgress(Mosquito);
+	DrawWebStatus(Mosquito);
 	DrawUpgradePanel(Mosquito);
 	DrawCrosshair();
 }

@@ -150,6 +150,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
 	bool IsTrapped() const { return bTrappedByWeb; }
 
+	/** HUD proximity chip (plan §3.1): spider/web distance in cm. */
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
+	float GetNearestSpiderDistance() const { return NearestSpiderDistance; }
+
 	/** 1.0 -> 0.0 while trapped; escape at 0. */
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
 	float GetEscapeProgress01() const { return FMath::Clamp(EscapeMeter, 0.f, 1.f); }

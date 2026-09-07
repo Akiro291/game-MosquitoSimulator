@@ -5,7 +5,7 @@
 > «Следующий шаг». Перед началом работы — прочитать этот файл,
 > `ai/PROMPTS.md` (план шагов) и `ai/GDD.md` (дизайн).
 
-**Последнее обновление:** 2026-09-07 (Prompt 14 — Минимальная полировка: цвета, процедурный звук, HUD; гейт Prompt 13 пройден в PIE — **MVP 0.1 ЗАВЕРШЁН** — см. «Историю сборок»)
+**Последнее обновление:** 2026-09-07 (MVP 0.2 Phases 0–6 реализованы и headless-верифицированы — паутина/прогрессия/сейв/Canvas-HUD; ждёт PIE-гейта владельцем — см. «Следующий шаг»)
 **Последний агент:** Cline (VS Code)
 
 ---
@@ -65,6 +65,7 @@ $p = Start-Process 'e:\ue_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' -PassT
 | 12. Wing Damage & Death (rev) | ✅ готово | `AMosquitoCharacter`: штрафы скорости от крыльев (Wings<50 → ×0.7, Wings<25 → ×0.4 + тряска камеры), `Die()` (отключение ввода, флаг bDead), `Respawn()` (восстановление статов, телепорт к PlayerStart, включение ввода), `IsDead()`. `AMosquitoHUD`: оверлей "DEAD — respawning..." при смерти. |
 | 13. Баланс + ПЛЕЙТЕСТ-ГЕЙТ (rev) | ✅ готово | Тюнинг 14 констант: комар быстрее (150), медленнее голод (0.5), быстрее реген (3.0), укус 0.6с, кровь +15; человек медленнее преследует (340), быстрее раздражает (3с), сильнее бьёт (14), чаще (1.5с), легче оторваться (900/5с). |
 | 14. Полировка | ✅ готово | Ноль ассетов: (1) **цвета** — runtime-MID на движковом BasicShapeMaterial (BaseColor): 10 блокаут-компонентов (земля/дом/стол/вода/деревья) + люди (тело/голова/рука); (2) **процедурный звук** `MosquitoAudio.h/.cpp` (наследник USoundWaveProcedural, 48 кГц моно): жужжание-луп (громкость 0.08–0.30 от скорости, тон ×0.65–1.0 от крыльев, FIFO доливается из Tick, тишина при посадке/смерти), хлопок 0.22 с (слышен всегда), укус 0.12 с; Build.cs += AudioExtensions; (3) camera shake при SWAT — из Prompt 12, ужесточён hotfix-ом; (4) **HUD**: чипы+обводки баров, цифры, Human-chip MediumFont с дистанцией в метрах, Score-плашка, Wings-бар <50 оранжевый/<25 красный. |
+| MVP 0.2 Ph0–Ph6 | ✅ готово (headless; ждёт PIE-гейта владельцем) | Фаза 0: гигиена docs/коммит. Фаза 1: `UMosquitoSimulatorGameInstance` — персист (lifetime/run/species), свой flat-ini в `Saved/Config/MosquitoSave.ini` (UCLASS(Config=) с custom-именем в 5.8 НЕ flush'ится — проверено, поэтому ручной SaveStringArrayToFile); проводка ТОЛЬКО через `[/Script/EngineSettings.GameMapsSettings] GameInstanceClass` (у AGameModeBase в 5.8 поля GameInstanceClass НЕТ); `-WipeSave`, `-SeedSave`, version-mismatch → defaults (run1 write → run2 read → run3 wipe → run4 corrupt-ini — все exit 0, 0 fatal). Фаза 2a/2b: `ASpiderCharacter` (AActor, не Character): сеть = gameQuery радиус 120 (никаких collision-каналов), `bTrappedByWeb` у комара (гейты Move*/укус+Velocity=0 тик), R-struggle (tap 0.12 / hold 0.036/с / recover 0.05/с, retake-immunity 1 с), FSM Idle→Approach(3 шага leash)→Windup 0.5+click→ApplySwatHit 10 без импульса→cooldown 2→ReturnHome; `-SpiderTest` доказан (TRAPPED t46 → 12 тапов → ESCAPED t158). Фаза 3: killable (3 укуса в windup; укус ЛКМ тем же distance-путём через NearestSpider), смерть → +150 Score→XP+lifetime, EscapeWeb, Destroy; веб = 6 NoCollision-цилиндров-нитей + PaintMesh серый; `-KillSpider` доказан. Фаза 4: `MosquitoProgressionTypes.h` (ERunBranch/ESpeciesBranch+константы); XP: битва(blood), живой полёт 1/с, Score→XP forward в AddScore, kill; кривая 100*lvl; 4 рун-ветки + Tab-панель (1–4, без паузы мира); множители ТОЛЬКО рядом с существующими (propulsion в SpeedMult, WingControl в MaxAcceleration(Base-кэш), Metabolism в hunger-tick, WebEscape в Struggle); `-SeedRunXP=250` → Level2 + buy L1. Фаза 5: Die() — учёт смерти (TotalDeaths/Generations++/-AwardSpeciesPoints 200 lifetime→+1/SaveNow), input НЕ отключается (гейты per-handler bDead — ради покупок на death-screen); наказание: MaxHealth=Base+Exo 10/ур, Blood 20, Hunger 70; death-panel [1-3] species → SaveNow при покупке. Headless-наследование: SeedScore=420+KillMe → Written lifetime=420 pts=2 → Loaded deaths=1 gens=1 ✓. Фаза 6: WEB AHEAD <250см, TRAPPED-плашка+escape-бар, финальный прогон чист. Первая строка: `[Mosquito] GameInstance NOT found` не появлялась ни в одном прогоне. |
 
 **Сборка C++: последний результат см. «История сборок» ниже.**
 
@@ -75,18 +76,21 @@ $p = Start-Process 'e:\ue_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' -PassT
 ```
 Source/MosquitoSimulator/
   MosquitoSimulator.h/.cpp          — модуль
-  MosquitoSimulator.Build.cs        — зависимости: Core, CoreUObject, Engine, InputCore, EnhancedInput
-  MosquitoSimulatorGameModeBase.*   — GameMode; BeginPlay спавнит блокаут (bSpawnBlockoutWorld), 3 HumanCharacter
-                                      (bSpawnHumans, HumanSpawnPoints) и DayNightSystem (bSpawnDayNight),
-                                      есть заглушка ServerTravel(DefaultMap=None)
+  MosquitoSimulator.Build.cs        — зависимости: Core, CoreUObject, Engine, InputCore, EnhancedInput (+AudioExtensions)
+  MosquitoSimulatorGameInstance.*   — MVP 0.2 §0/§2: персист-контейнер (lifetime/run/species), свой flat-ini
+                                       Saved/Config/MosquitoSave.ini (+-WipeSave/-SeedSave), уровень+очки run-прогрессии
+  MosquitoProgressionTypes.h        — MVP 0.2 §4: ERunBranch/ESpeciesBranch + биологические константы веток
+  SpiderCharacter.*                 — MVP 0.2 §1: паук-ловушка: web-radius query, FSM Approach/Windup/Cooldown,
+                                       bite через ApplySwatHit, 3 укуса в windup => Destroy + 150 Score/XP;
+                                       dev-флаги -SpiderTest / -KillSpider
+  MosquitoCharacter.*               — игрок: статы + полёт + камера + Enhanced Input + ApplySwatHit; Prompt 9: тик/посадка/укус
+                                       (dev -StatSpeed); P11 Score; P12 Die/Respawn; MVP0.2 §1: bTrappedByWeb/EscapeMeter/R-стрёпот
+                                       (базы BaseMaxAcceleration/BaseMaxHealth кэшируются до множителей!), §4: XP-источники,
+                                       Tab-панель и покупки, §5: наказание смертью+species (input на смерти НЕ отключается)
+  MosquitoSimulatorGameModeBase.*   — GameMode; BeginPlay спавнит блокаут (bSpawnBlockoutWorld), 3 людей (bSpawnHumans),
+                                       DayNight (bSpawnDayNight), паутину (bSpawnSpider, SpiderWebLocation=(-800,650,60)),
+                                       грузит персист-лог; есть заглушка ServerTravel(DefaultMap=None)
   MosquitoSimulatorPlayerController.* — ввод GameOnly, курсор скрыт
-  MosquitoCharacter.*               — игрок: статы + полёт + камера + Enhanced Input + ApplySwatHit;
-                                      Prompt 9: Tick-статы (голод/энергия/сжигание крови, Exhausted),
-                                      посадка bIsLanded (ЛКМ ≤85 см, прилип к человеку, взлёт клавишами),
-                                      укус (прогресс 0.75 с → OnBitten + кровь), dev-флаг -StatSpeed=N;
-                                      Prompt 11: CurrentScore/TotalScore + AddScore();
-                                      Prompt 12: штрафы скорости от крыльев (Wings<50→×0.7, Wings<25→×0.4+тряска),
-                                      Die()/Respawn() при Health/Wings ≤ 0, телепорт к PlayerStart
   HumanCharacter.*                  — Prompt 7: человек-NPC. FSM (Calm/Noticed/Irritated/Angry/Chase) по
                                       IrritationLevel 0–4, PerformAttack() + AttackCooldown, детект по дистанции
                                       ×NoiseLevel комара, OnBitten() для Prompt 9; визуал — цилиндр+голова+
@@ -137,6 +141,7 @@ Config/DefaultInput.ini             — DefaultPlayerInputClass=EnhancedPlayerIn
 
 | Дата | Результат | Детали |
 |---|---|---|
+| 2026-09-07 (MVP 0.2 Ph0-6) | ✅ Succeeded + headless-верификации ×8 чистые | Полный цикл фаз 0–6 (см. таблицу «Статус по промтам», строка MVP 0.2). Итоговый мейн: `Game class=GamModeBase`, `GameInstance=MosquitoSimulatorGameInstance`, Blockout, 3×Human, Spider+Web, 26× readback=OK, `[Save] Loaded`, 0 fatal/ensure, exit 0. PIE-гейт — за владельцем. |
 | 2026-09-07 (collision v5b, фикс мира) | ✅ Succeeded + headless ×2 чисто | **Регрессия v5 «комар проходит сквозь весь мир» — root cause в ini.** В v5 канал был объявлен `DefaultResponse=ECR_Ignore`, а профиль **BlockAll** (пол/стены/деревья/стол) имеет пустые CustomResponses и берёт ответ на новый канал ИЗ DefaultResponse канала («All new custom channels will use its own default response») → мир отвечал **Ignore** на MosquitoBody → правило пары «Block обязателен с обеих сторон» не выполнялось → пролёт мира. Фикс: `DefaultResponse=ECR_Ignore` → **`ECR_Block`** в DefaultEngine.ini (единственная строка; код не менялся). Односторонность Mosquito↔Human сохранена: Human имеет явный runtime-override `SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore)` в ctor (HumanCharacter.cpp:51) — профильный Block перекрывается. Конфликтов объявлений канала в конфигах нет (проверено grep по Config/*.ini). **Headless:** quit + benchmark: EXIT=0, 0 fatal/ensure, 0 наших Warn/Error, 6/6 маркеров. PIE-чек владельцем: комар не проходит сквозь пол/стены/деревья/стол, скользит по поверхностям; Human не толкается; посадка/укус работают. |
 | 2026-09-07 (collision v5, односторонняя модель) | ✅ Succeeded + headless ×2 чисто | **PIE-симптомы v4 разобраны на 2 root cause: (1) вектор push был ИНВЕРТИРОВАН — `PushDir = HumanCenter − MosPos` тянул комара К центру человека, коррекция сама протаскивала его сквозь тело (отсюда «проходит с рывком назад»); (2) человеческая капсула — object type ECC_Pawn с Pawn-профилем (Block на Pawn-канал) → при ходьбе человека его CMC находил капсулу комара и де-пенетрировал САМОГО человека (отсюда «подбрасывает снизу»). Все прошлые фиксы меняли только ответ комара.** **Модель v5 (односторонняя):** ini: новый object channel `MosquitoBody` (ECC_GameTraceChannel1, DefaultResponse=Ignore); комар: object type=MosquitoBody + `ECC_Pawn=ECR_Block` → собственный swept-move движка (CMC→SafeMoveUpdatedComponent→ResolvePenetration) штатно останавливает/скользит комара по человеку, penetration resolve двигает только комара; human: `SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore)` в ctor → движение человека физически не может взаимодействовать с комаром (human-vs-human ECC_Pawn не тронут); ручная `ResolvePawnPenetration(DeltaTime)` в Tick — только для «человек прошёл над зависшим комаром», направление ИСПРАВЛЕНО (от человека, Away-вектор), только позиция комара, sweep=true от мира; сигнатура получила DeltaTime (throttle-диагностика). **TEMP-диагностика** `[ Mosquito::HumanCollision ]` type=BLOCKED/DEPENETRATED + mosquitoLoc/humanLoc/normal/penetration/velocity, throttle 0.5 c (`LogHumanCollision`) — убрать после PIE-верификации. Файлы: `MosquitoCharacter.h/.cpp`, `HumanCharacter.cpp` (только ctor, 1 строка + коммент), `Config/DefaultEngine.ini` (секция [CollisionProfile]). **Build:** Succeeded. **Headless:** quit + benchmark: EXIT=0, 0 fatal/ensure, 0 наших Warn/Error, 6/6 маркеров, diag=0 (headless без контактов — норма). PIE-чек владельцем обязателен: комар останавливается у человека и скользит, не пролетает; человек не реагирует даже при заходе «под ноги»; посадка/укус/Chase/SWAT работают. |
 | 2026-09-07 (collision v4, fix) | ✅ Succeeded + headless ×2 чисто | **Root cause неработающей коррекции v3 найден: sweep в `ResolvePawnPenetration` стартовал ИЗ ЦЕНТРА человека → probe-капсула всегда рождалась в initial-overlap (`Hit.bStartPenetrating=true` описывал probe в стартовой позе, не комара) → код явно отвергал этот случай (`\|\| Hit.bStartPenetrating → return`) → гарантированный no-op и в PIE, и в headless (поэтому «комар пролетает сквозь Human»).** Фикс: sweep заменён на прямую аналитическую математику capsule-vs-capsule (обе капсулы вертикальные): расстояние между вертикальными осями + вертикальный gap между сегментами (half-height − radius), если `Dist < SumRadii` → push по минимальному вектору разделения (горизонталь + вертикаль при gap>0), глубина `SumRadii−Dist+0.05`. Коррекция ТОЛЬКО позиции комара: `SetActorLocation(NewLocation, bSweep=true)` — sweep защищает от вталкивания в мир; velocity/accel/mode не трогаются (нет «дополнительного ускорения»); Human не двигается вообще. Гейты сохранены: `!bIsLanded` (посадка/укус не задеты), `!bDead`, префильтр 150 см. Файл: `MosquitoCharacter.cpp` (−56/+47). **Build:** Succeeded (1 попытка). **Headless:** quit + benchmark 15 с — EXIT=0 оба, 0 fatal/ensure, 0 наших Warn/Error, 6/6 маркеров. Логи: ai/logs/headless_collision_fix_{quit,bench}.log. PIE-чек владельцем: пролёт сквозь человека выталкивает комара без дёрганий; посадка+укус; Chase при контакте. |
@@ -162,15 +167,33 @@ Config/DefaultInput.ini             — DefaultPlayerInputClass=EnhancedPlayerIn
 
 ## Следующий шаг
 
-**MVP 0.1 ЗАВЕРШЁН** — промпты 1–14 сделаны, гейт Prompt 13 пройден в PIE 2026-09-07
-(человек реально бежит в Chase; тряска камеры безопасна; баланс принят владельцем),
-финальный QA-этап 2026-09-07 закрыл 6 находок плейтеста (HUD-спавн, кик камеры при
-SWAT, трамплин-коллизия, доказанная покраска, Lumen-экспозиция).
+**MVP 0.2 ПСКРЯТЕК В ДЕРЕВЕ (Phases 0–6, headless-гейт пройден)** — код закоммичен пофазно,
+сборка чистая, финальный `-benchmark` прогон: GameClass/GameInstance wiring/Blockout/3×Human/Spider/
+[Save] Loaded/26× readback=OK/0 fatal/ensure. Логи: `ai/logs/headless_*` (save_run1-4, spider_2a/2b/3_*,
+prog_4, deathloop_a/b, mvp02_final).
 
-**Дальше — только по явному решению владельца (v0.2):**
-- Collision-концепция v3 (Overlap + ручная коррекция только комара) УТВЕРЖДЕНА владельцем 2026-09-07 — реализована и верифицирована headless; остался ручной PIE-чек. Не возвращать Block-схему.
-- План MVP 0.2 (P0–P6) согласован с владельцем 2026-09-07 — см. ai/HANDOFF.md раздел NEXT.
-- Кандидаты из ai/DESIGN.md: пауки, поколения/генетика, посёлок, расписания, погода, настоящий UI, сейвы — ВСЁ это сейчас в «Запрещено» (ai/CURRENT.md), не трогать без подтверждения.
-- Технический долг MVP: геймпад (Prompt 5 частично), камера без коллизии (SpringArm bDoCollisionTest=false). Диагностические логи `[Human::DIAG]`/`[Human::Chase]` уже понижены до Verbose в FINAL HOTFIX — спам исчез.
+**PIE-гейт владельца (обязателен перед 0.3, план §Verification):**
+1. Влёт в сеть (-800,650) → стоп; мигает «TRAPPED - MASH R!» + растёт escape-бар; частые R → вылет;
+   удержание R освобождает медленнее; чип «WEB AHEAD» при <2.5 м; вне радиуса полёт не тронут.
+2. Во время борьбы паук подходит (3 шага в пределах сети), приседание-виндап 0.5 с + click-звук, удар
+   (крылья −10, кик камеры, красный флеш). Person NPC проходит сквозь сеть без эффекта.
+3. 3 укуса ЛКМ в момент виндапа → паук и все нити исчезают, +150 Score; укусы вне виндапа не считаются.
+4. Накусать/долетать до Level 2+ → Tab: панель веток, покупки 1–4, полёт продолжается («panel open»).
+5. Умереть (SWAT/голод) → death-screen: records+lifetime, species-очки ([1-3]); купить Exoskeleton →
+   новая комарица Level 1, Health 110, Blood 20, Hunger 70.
+6. Закрыть игру → запустить: species/рекорды сохранились (Saved/Config/MosquitoSave.ini; `-WipeSave` сбрасывает).
 
-Перед началом: перечитать `ai/PROMPTS.md`, `ai/GDD.md`, этот файл. Каждую законченную задачу прогонять через headless-верификацию (рецепт выше).
+**Известные особенности (намеренные решения, см. коммиты фаз):**
+- Убийство паука засчитывается в BestChaseScore только как chase-очки (`AddScore(p,false)` у spider-награды).
+- В `-nullrhi` headless `[MosquitoHUD] First draw` не печатается (Canvas рисуется только в реальном окне) —
+  контрольный маркер там `[MosquitoHUD] Active`, он на месте; поведение унаследовано от 0.1.
+- GameInstance проводка — только `[/Script/EngineSettings.GameMapsSettings] GameInstanceClass` (в 5.8 у
+  AGameModeBase поля GameInstanceClass нет); свой `UCLASS(Config=NewFile)` не flush'ится → персист пишет
+  flat-ini руками (формат тот же [section]/Key=Value).
+- `Die()` больше НЕ дергает `PC->DisableInput` (нужны покупки 1–3 на death-screen) — взамен гейты bDead в
+  Move*/Look/OnBite; проверка: во время оверлея DEAD комар не двигается, мышь не крутится.
+
+**Дальше (по решению владельца):** кандидаты 0.3 — mating/partner + полный genetics-UI, второй паук/патрули,
+настоящий уровень вместо блокаута, UMG-меню/pause (в 0.2 сознательно не делали), геймпад (-tech-долг).
+Перед началом: перечитать `ai/CURRENT.md`, `ai/PROMPTS.md`, `ai/GDD.md`, этот файл. Каждую законченную
+задачу прогонять через headless-верификацию (рецепт выше).
