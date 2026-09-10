@@ -97,6 +97,11 @@ try {
     Run-Scenario '11_corrupt_defaults' @() 0 @{
         'Version mismatch' = 1; 'Loaded version=1 lifetime=0' = 1; 'Written version=1 lifetime=0' = 1 }
 
+    # 12: run progression - XP curve level-up + purchase API (Tab panel's backend).
+    Run-Scenario '12_run_progression' @('-SeedRunXP=250') 0 @{
+        'Seeded run XP=250' = 1; 'Level up! RunLevel=2 points=1' = 1;
+        'Bought Muscular Propulsion -> L1' = 1 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')

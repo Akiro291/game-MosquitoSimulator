@@ -47,6 +47,19 @@ $p = Start-Process 'e:\ue_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' -PassT
 
 ---
 
+### 🔬 Головная регресс-сюита (2026-09-10, ОБЯЗАТЕЛЬНА после каждого изменения кода)
+```
+powershell -ExecutionPolicy Bypass -File ai\logs\headless_suite.ps1        # build + все 12 сценариев
+powershell ... -File ai\logs\headless_suite.ps1 -SkipBuild                 # только прогоны
+powershell ... -File ai\logs\headless_suite.ps1 -Only 04                   # один сценарий
+```
+Сценарии: 01 plain-маркеры+readback, 02/03 сейв write→read, 04 паутина trap/escape, 05 kill+cooldown-респавн,
+06/07 гнездо clutch+наследование мутации, 08/09 deathloop award+перезапуск, 10 StatSpeed Exhausted/Starving,
+11 corrupt-ini→дефолты, 12 SeedRunXP level-up+покупка. Логи: `ai/logs/suite/*.log` (в .gitignore, не коммитятся).
+Сюита сама: блокирует запуск при открытом редакторе (Live Coding лочит DLL), бэкапит и ВОССТАНАВЛИВАЕТ
+`Saved/Config/MosquitoSave.ini` владельца, печатает PASS/FAIL-таблицу, exit 1 при любом FAIL.
+Новые механики = новый сценарий в `Run-Scenario` (паттерны маркеров `-SimpleMatch`, минимумы количеств).
+
 ## Статус по промтам (план: ai/PROMPTS.md)
 
 | Prompt | Статус | Примечание |
