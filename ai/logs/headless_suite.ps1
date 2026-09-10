@@ -91,6 +91,12 @@ try {
     Run-Scenario '10_stat_speed' @('-StatSpeed=100') 15 @{
         'Stat speed x100' = 1; 'Exhausted!' = 1; 'Starving' = 1 }
 
+    # 11: hand-corrupted save (missing version, garbage values) -> defaults, no crash
+    # (plan MVP 0.2 §2 verification case, now part of the standing regression).
+    Set-Content -Path $save -Value "[MosquitoSave]`r`nLifetimeScore=-999`r`nTotallyBogus=abc`r`n" -Encoding ascii
+    Run-Scenario '11_corrupt_defaults' @() 0 @{
+        'Version mismatch' = 1; 'Loaded version=1 lifetime=0' = 1; 'Written version=1 lifetime=0' = 1 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')

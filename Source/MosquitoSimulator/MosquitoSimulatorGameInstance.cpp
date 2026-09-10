@@ -352,11 +352,11 @@ void UMosquitoSimulatorGameInstance::Load()
 		}
 
 		if (Key == TEXT("Version")) { Version = Value; }
-		else if (Key == TEXT("LifetimeScore")) { LifetimeScore = Value; }
-		else if (Key == TEXT("BestChaseScore")) { BestChaseScore = Value; }
-		else if (Key == TEXT("TotalDeaths")) { TotalDeaths = Value; }
-		else if (Key == TEXT("Generations")) { Generations = Value; }
-		else if (Key == TEXT("UnspentSpeciesPoints")) { UnspentSpeciesPoints = Value; }
+		else if (Key == TEXT("LifetimeScore")) { LifetimeScore = FMath::Max(0, Value); }
+		else if (Key == TEXT("BestChaseScore")) { BestChaseScore = FMath::Max(0, Value); }
+		else if (Key == TEXT("TotalDeaths")) { TotalDeaths = FMath::Max(0, Value); }
+		else if (Key == TEXT("Generations")) { Generations = FMath::Max(0, Value); }
+		else if (Key == TEXT("UnspentSpeciesPoints")) { UnspentSpeciesPoints = FMath::Max(0, Value); }
 		else if (Key == TEXT("SpeciesBloodEfficiency")) { SpeciesBloodEfficiency = FMath::Clamp(Value, 0, MaxSpeciesBranchLevel); }
 		else if (Key == TEXT("SpeciesWebResistantAdhesion")) { SpeciesWebResistantAdhesion = FMath::Clamp(Value, 0, MaxSpeciesBranchLevel); }
 		else if (Key == TEXT("SpeciesExoskeleton")) { SpeciesExoskeleton = FMath::Clamp(Value, 0, MaxSpeciesBranchLevel); }
