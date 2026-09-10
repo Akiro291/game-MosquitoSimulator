@@ -118,6 +118,12 @@ try {
         'Written version=1 lifetime=199 speciesPts=0' = 1 } `
         @{ 'Species reward' = 1 }
 
+    # 16: trapped + death edge - respawn must clear the web trap BEFORE input
+    # (plan 1 edge case) and apply the soft punishment values (plan 4).
+    Run-Scenario '16_trapped_death_respawn' @('-WipeSave', '-SpiderTest', '-KillMe') 15 @{
+        'TRAPPED in spider web' = 1;
+        'Respawned! blood=20 hunger=70 maxHealth=100 trapped=0' = 1 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')

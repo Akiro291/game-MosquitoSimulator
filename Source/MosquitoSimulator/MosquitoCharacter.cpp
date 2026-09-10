@@ -927,7 +927,10 @@ void AMosquitoCharacter::Respawn()
 
 	bDead = false;
 
-	UE_LOG(LogTemp, Log, TEXT("[Mosquito] Respawned!"));
+	// Suite scenario 16 asserts these numbers headlessly (punishment values +
+	// trap cleared before input re-enable, plan §1 edge case).
+	UE_LOG(LogTemp, Log, TEXT("[Mosquito] Respawned! blood=%.0f hunger=%.0f maxHealth=%.0f trapped=%d"),
+		CurrentBlood, CurrentHunger, MaxHealth, bTrappedByWeb ? 1 : 0);
 }
 
 void AMosquitoCharacter::DetectNearbyHumans()
