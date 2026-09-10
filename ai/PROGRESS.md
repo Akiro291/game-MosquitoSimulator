@@ -128,7 +128,7 @@ Config/DefaultInput.ini             — DefaultPlayerInputClass=EnhancedPlayerIn
 
 ---
 
-## Известные проблемы / риски (актуально на 2026-09-05)
+## Известные проблемы / риски (актуально на 2026-09-10)
 
 1. **Камера без коллизии** — `SpringArm->bDoCollisionTest=false`: камера может проникать в стены вблизи. Для блокаута норм; чинить при появлении домов с внутренностями.
 2. **Ось pitch мыши** — конвенция официального шаблона UE5.8 (без negate, `AddControllerPitchInput(LookAxis.Y)`). Если в PIE инвертирована — добавить `UInputModifierNegate` на Y-маппинг `Mouse2D` в конструкторе `AMosquitoCharacter`.
@@ -141,6 +141,12 @@ Config/DefaultInput.ini             — DefaultPlayerInputClass=EnhancedPlayerIn
 9. **Ошибки LogPython при старте** (`VibeUE: failed to register skill ...`, `ToolsetRegistry ... PythonTestRunner`) — шум стороннего плагина VibeUE в проекте + engine-плагина, не наш код. Игнорировать (в headless-проверках фильтровать `LogPython|LogOutputDevice`).
 10. **ИСТОРИЯ: до вечера 2026-09-05 PIE ни разу не запускался.** Headless-проверка выявила и исправила 2 критических бага (см. «Историю сборок») — модуль вообще не загружался. Теперь код проверен запуском, а не только компиляцией.
 11. **API-ловушки UE 5.8 (уже учтены в коде):** `FCommandLine` живёт в `Misc/CommandLine.h` (не `HAL/PlatformCommandLine.h` — его нет); цвет тумана — `UExponentialHeightFogComponent::SetFogInscatteringColor()` (`SetFogColor` НЕ существует). Headless-нюанс: `-ExecCmds=quit` даёт лишь пару тиков — для прогонов по времени использовать `-benchmark -benchmarkseconds=15` (~450 тиков). Визуал headless не проверяет — смотреть в PIE. Dev-флаги для headless-тестов: `-DayLength=N` (сутки за N сек), `-StatSpeed=N` (ускорение голода/энергии).
+12. **API-ловушки UE 5.8 (MVP 0.2, уже учтены):** у `UGameInstance` НЕТ `EndPlay` — хук выхода `Shutdown()`; `UGameplayStatics::GetWorldFromContextObject` отсутствует — `GEngine->GetWorldFromContextObject(...)`; у `AGameModeBase` НЕТ поля `GameInstanceClass` — проводка GameInstance только через `[/Script/EngineSettings.GameMapsSettings] GameInstanceClass` (читают и `UGameEngine::Init`, и PIE `PlayLevel.cpp`); `UCLASS(Config=NewFile)` с custom-именем в 5.8 на диск не flush'ится — персист пишется руками (см. 13).
+13. **Персист = свой flat-ini** `Saved/Config/MosquitoSave.ini` (`UMosquitoSimulatorGameInstance`): atomic write (tmp+Move), additive-ключи без bump версии, загрузчик терпит мусор (клампы/игнор), `-WipeSave` удаляет файл. НЕ переводить на JSON/SaveGame-подсистему без явного решения владельца.
+14. **Депенетрация комара — СВОЙ свип только по WorldStatic/WorldDynamic** (`ResolvePawnPenetration`): `SetActorLocation(bSweep=true)` в исходном виде блокировался самим человеком (initial-overlap → hit t=0 → отказ) и спамил DEPENETRATED. Не откатывать.
+15. **`Die()` НЕ отключает ввод** (покупки species 1–3 на death-screen) — вместо этого гейты `bDead` в Move*/Look/OnBitePressed. Не возвращать `DisableInput` без переноса покупок.
+16. **Спавны 0.2/0.3 в GameMode:** паук — один, респавн строго `SpiderRespawnDelay` (один таймер, guard от задвоения, дев `-SpiderRespawn=N`); гнездо — постоянный спавн без респавна; оба transient-актёра, query-зоны без collision-каналов.
+17. **Сюита `ai\logs\headless_suite.ps1` (12 сценариев) — обязательный гейт после каждого изменения кода** (секция «Headless-верификация» выше). До неё ручные прогоны были одноразовыми — накапливались регрессии.
 
 ---
 
