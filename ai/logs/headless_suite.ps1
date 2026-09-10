@@ -102,6 +102,10 @@ try {
         'Seeded run XP=250' = 1; 'Level up! RunLevel=2 points=1' = 1;
         'Bought Muscular Propulsion -> L1' = 1 }
 
+    # 13: day/night cycle (0.1 system) - 2s days must cross both event lines.
+    Run-Scenario '13_daynight' @('-DayLength=2') 15 @{
+        '[DayNight] Started at' = 1; '[DayNight] SUNSET at' = 1; '[DayNight] SUNRISE at' = 1 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')
