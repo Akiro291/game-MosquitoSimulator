@@ -152,6 +152,18 @@ Config/DefaultInput.ini             — DefaultPlayerInputClass=EnhancedPlayerIn
 
 ## Как проверить руками (чек-лист в редакторе)
 
+**MVP 0.3 A (гнездо) — после следующего PIE-сеанса:**
+1. Наесть крови ≥60 (2 укуса из полного живота? нет: укус +15, старт 20 → ~3 укуса) и долететь до гнезда за домом (коричневая «чаша» со светлыми яйцами, ~(900,120)).
+2. В радиусе ~1.5 м: мгновенно «LIFE COMPLETE - the lineage continues...» (зелёный), в Output Log `[Nest] Clutch #1 booked... mutation:`, TotalScore +100.
+3. Death-screen: строка «Clutches laid: 1, last nest mutation: X»; species-очко +1 сверх обычных.
+4. Респавн: если мутация Exoskeleton → Health-бар максимум 110 сразу у новой комарицы.
+5. Перезапустить игру (тот же процесс/PIE stop-play-start): `[Save] Loaded ... clutch=1` + «Species inherited at spawn» при Exo.
+6. Повторно наевшись и долетев — вторая кладка (#2), ещё очко+мутация.
+
+**MVP 0.2 (референс):** сеть/trapped-R/lunge/kill, Tab-панель, death-loop, сейв/`-WipeSave` — чек-лист в «Следующем шаге» выше.
+**Перед любым ручным тестом: закрыть PIE, прогнать `ai\logs\headless_suite.ps1` (12/12 PASS) — иначе не тестировать.**
+
+
 1. Собрать (команда выше), открыть редактор, карта MainLevel, **Play**.
 2. Видно серый блокаут-посёлок от третьего лица за комаром (комар — сфера 2 см).
 3. **WASD** — полёт, **Space/E** — вверх, **Ctrl/Q** — вниз, **мышь** — обзор.
