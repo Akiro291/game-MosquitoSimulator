@@ -35,7 +35,7 @@ try {
 
     $script:results = @()
     function Run-Scenario {
-        param([string]$Name, [string[]]$Extra = @(), [int]$Seconds = 0, [hashtable]$Expect)
+        param([string]$Name, [string[]]$Extra = @(), [int]$Seconds = 0, [hashtable]$Expect, [hashtable]$Forbid = @{})
         if ($Only -and -not $Name.StartsWith($Only)) { return }
         $log = Join-Path $logDir "$Name.log"
         if (Test-Path $log) { Remove-Item $log -Force }
@@ -53,6 +53,10 @@ try {
             foreach ($k in $Expect.Keys) {
                 $cnt = @(Select-String -Path $log -Pattern $k -SimpleMatch).Count
                 if ($cnt -lt $Expect[$k]) { $fail += "'$k'=$cnt want>=$($Expect[$k])" }
+            }
+            foreach ($k in $Forbid.Keys) {
+                $cnt = @(Select-String -Path $log -Pattern $k -SimpleMatch).Count
+                if ($cnt -gt 0) { $fail += "FORBID '$k'=$cnt" }
             }
             $bad = @(Select-String -Path $log -Pattern 'Fatal error|Assertion failed|Handled ensure').Count
             if ($bad -gt 0) { $fail += "fatal/ensure=$bad" }
@@ -105,6 +109,14 @@ try {
     # 13: day/night cycle (0.1 system) - 2s days must cross both event lines.
     Run-Scenario '13_daynight' @('-DayLength=2') 15 @{
         '[DayNight] Started at' = 1; '[DayNight] SUNSET at' = 1; '[DayNight] SUNRISE at' = 1 }
+
+    # 14/15: species-award boundary - exactly 200 lifetime pays +1, 199 pays nothing.
+    Run-Scenario '14_award_boundary_200' @('-WipeSave', '-SeedScore=200', '-KillMe') 15 @{
+        'Species reward +1 point(s)' = 1; 'Written version=1 lifetime=200 speciesPts=1' = 1 } `
+        @{ 'Species reward +2' = 1 }
+    Run-Scenario '15_award_below_200' @('-WipeSave', '-SeedScore=199', '-KillMe') 15 @{
+        'Written version=1 lifetime=199 speciesPts=0' = 1 } `
+        @{ 'Species reward' = 1 }
 
     Write-Host ''
     $script:results | Format-Table -AutoSize
