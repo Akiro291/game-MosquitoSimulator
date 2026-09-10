@@ -164,6 +164,18 @@ public:
 	/** Free the mosquito (struggle success or spider death). */
 	void EscapeWeb();
 
+	// --- MVP 0.3 phase A skeleton: nest clutch / life completion ---
+	UFUNCTION(BlueprintCallable, Category = "Mosquito|Life")
+	/** Fly home full enough: pays the clutch reward, books the generation, then
+	    ends the run through the EXISTING Die/Respawn accounting. */
+	void CompleteLifeCycle(int32 RewardPoints);
+
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Life")
+	bool HasClutchedThisRun() const { return bClutchedThisRun; }
+
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Life")
+	bool IsLifeComplete() const { return bLifeComplete; }
+
 	// --- MVP 0.2 §3/§4: run-upgrade panel (Tab; purchase keys 1-4; NO world pause) ---
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Progression")
 	bool IsUpgradePanelOpen() const { return bUpgradePanelOpen; }
@@ -268,6 +280,10 @@ protected:
 	// --- MVP 0.2 §4: progression runtime ---
 	UPROPERTY()
 	TObjectPtr<UMosquitoSimulatorGameInstance> GameSave = nullptr;
+
+	// --- MVP 0.3 phase A: clutch state (per run, reset in Respawn) ---
+	bool bClutchedThisRun = false;
+	bool bLifeComplete = false;
 
 	// Dev flags (plan §4 Verification headless): -SeedScore=N, -KillMe
 	bool bDevKillSelf = false;

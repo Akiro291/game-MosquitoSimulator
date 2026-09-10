@@ -44,6 +44,18 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Save|Lifetime")
 	int32 Generations = 0;
 
+	// --- MVP 0.3 phase A skeleton (S2): clutch bookkeeping, persisted additively.
+	// No Version bump: unknown/missing ini keys keep their defaults, old saves load. ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Save|Generation")
+	int32 TotalClutches = 0;
+
+	/** ESpeciesBranch index+1 of the last nest mutation roll (0 = none yet). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Save|Generation")
+	int32 LastMutation = 0;
+
+	/** Nest delivered: guaranteed +1 species point + one deterministic mutation roll. */
+	void NotifyClutchLaid();
+
 	// --- Run progress (transient on purpose: never saved, plan §2) ---
 	float RunXP = 0.f;
 

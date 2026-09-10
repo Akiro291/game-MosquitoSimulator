@@ -446,6 +446,34 @@ void AMosquitoCharacter::OnStruggleCompleted(const FInputActionValue& Value)
 	bStruggleHeld = false;
 }
 
+// --- MVP 0.3 phase A: nest clutch / life completion --------------------------------
+
+void AMosquitoCharacter::CompleteLifeCycle(int32 RewardPoints)
+{
+	if (bClutchedThisRun || bDead)
+	{
+		return;
+	}
+	bClutchedThisRun = true;
+	bLifeComplete = true; // HUD swaps DEAD text to LIFE COMPLETE in phase A
+
+	AddScore(RewardPoints); // single pipe: -> XP + lifetime score (plan §4)
+
+	UE_LOG(LogTemp, Warning, TEXT("[Mosquito] LIFE COMPLETE - clutch laid (+%d score, generation booked)"),
+		RewardPoints);
+
+	// The clutch's own bookkeeping: +1 guaranteed species point + one deterministic
+	// mutation roll, persisted immediately (plan A skeleton, S2).
+	if (GameSave)
+	{
+		GameSave->NotifyClutchLaid();
+	}
+
+	// Reuse the proven death-loop accounting verbatim (Generations++, lifetime-species
+	// award, save). A bespoke generation screen is the next phase after this skeleton.
+	Die();
+}
+
 void AMosquitoCharacter::EscapeWeb()
 {
 	if (!bTrappedByWeb)
@@ -821,6 +849,9 @@ void AMosquitoCharacter::Die()
 	// purchases only there) can already spend them. Input deliberately stays ON for
 	// keys 1-3 (species buys) - flight/bite are gated per-handler on bDead instead
 	// (plan: edits to MosquitoCharacter are only gates/runners).
+	// MVP 0.3 A: a clutch death IS also a generation change - accounting runs the
+	// same way; NotifyClutchLaid() already saved its bonus before us (the second
+	// [Save] Written here carries the death counters on top of it).
 	if (GameSave)
 	{
 		GameSave->MarkDeath();
@@ -841,6 +872,10 @@ void AMosquitoCharacter::Respawn()
 	EscapeMeter = 1.f;
 	WebRetakeImmunityTimer = WebRetakeImmunitySeconds;
 	bUpgradePanelOpen = false;
+
+	// MVP 0.3 A: every new mosquito gets its own chance to reach the nest.
+	bClutchedThisRun = false;
+	bLifeComplete = false;
 
 	// MVP 0.2 §4: the new mosquito starts the run at Level 1 (species bonuses apply in §5).
 	if (GameSave)

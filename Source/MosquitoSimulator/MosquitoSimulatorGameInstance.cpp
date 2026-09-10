@@ -28,10 +28,10 @@ void UMosquitoSimulatorGameInstance::Init()
 
 	UE_LOG(LogTemp, Display,
 		TEXT("[Save] Loaded version=%d lifetime=%d bestChase=%d deaths=%d generations=%d ")
-		TEXT("speciesPts=%d branches=%d/%d/%d"),
+		TEXT("speciesPts=%d branches=%d/%d/%d clutch=%d lastMut=%d"),
 		Version, LifetimeScore, BestChaseScore, TotalDeaths, Generations,
 		UnspentSpeciesPoints, SpeciesBloodEfficiency, SpeciesWebResistantAdhesion,
-		SpeciesExoskeleton);
+		SpeciesExoskeleton, TotalClutches, LastMutation);
 
 	// Dev helper for headless write->read proof (plan §2): writes deterministic values.
 	if (FParse::Param(FCommandLine::Get(), TEXT("SEEDSAVE")))
@@ -223,6 +223,42 @@ void UMosquitoSimulatorGameInstance::AddLifetimeScore(int32 Amount)
 	}
 }
 
+void UMosquitoSimulatorGameInstance::NotifyClutchLaid()
+{
+	++TotalClutches;
+	++UnspentSpeciesPoints; // guaranteed biological payout for reaching the nest
+
+	// Deterministic mutation roll so the headless proof is reproducible: seeded
+	// by the clutch number, ONE species branch +1 level. Skeleton rule for the
+	// future generation screen: clutches also REROLL variety, purchases pay it.
+	FRandomStream Rng(20260910 + TotalClutches * 7919);
+	const int32 Roll = Rng.RandRange(0, 2);
+	const ESpeciesBranch Branch = static_cast<ESpeciesBranch>(Roll);
+	bool bApplied = false;
+	int32 NewLevel = GetSpeciesBranchLevel(Branch);
+	if (NewLevel < MaxSpeciesBranchLevel)
+	{
+		switch (Branch)
+		{
+		case ESpeciesBranch::BloodEfficiency: ++SpeciesBloodEfficiency; break;
+		case ESpeciesBranch::WebResistantAdhesion: ++SpeciesWebResistantAdhesion; break;
+		case ESpeciesBranch::Exoskeleton: ++SpeciesExoskeleton; break;
+		default: break;
+		}
+		NewLevel = GetSpeciesBranchLevel(Branch);
+		LastMutation = static_cast<int32>(Branch) + 1;
+		bApplied = true;
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("[Nest] Clutch #%d booked: +1 species pt (total=%d)%s%s"),
+		TotalClutches, UnspentSpeciesPoints,
+		bApplied ? TEXT(", mutation: ") : TEXT(", all branches maxed - mutation skipped"),
+		bApplied ? *FString::Printf(TEXT("%s -> L%d"), *MosquitoProgression::GetSpeciesBranchName(Branch), NewLevel)
+			: TEXT(""));
+
+	SaveNow(); // the generation is a persistence event (plan §2: death/purchase/...)
+}
+
 void UMosquitoSimulatorGameInstance::SetBestChaseScoreIfHigher(int32 Score)
 {
 	if (Score > BestChaseScore)
@@ -264,6 +300,8 @@ void UMosquitoSimulatorGameInstance::SaveNow()
 	Lines.Add(FString::Printf(TEXT("SpeciesWebResistantAdhesion=%d"), SpeciesWebResistantAdhesion));
 	Lines.Add(FString::Printf(TEXT("SpeciesExoskeleton=%d"), SpeciesExoskeleton));
 	Lines.Add(FString::Printf(TEXT("SpeciesAwardBaseScore=%d"), SpeciesAwardBaseScore));
+	Lines.Add(FString::Printf(TEXT("TotalClutches=%d"), TotalClutches));
+	Lines.Add(FString::Printf(TEXT("LastMutation=%d"), LastMutation));
 
 	if (!FFileHelper::SaveStringArrayToFile(Lines, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
@@ -271,8 +309,8 @@ void UMosquitoSimulatorGameInstance::SaveNow()
 		return;
 	}
 	bDirty = false;
-	UE_LOG(LogTemp, Display, TEXT("[Save] Written version=%d lifetime=%d speciesPts=%d"),
-		Version, LifetimeScore, UnspentSpeciesPoints);
+	UE_LOG(LogTemp, Display, TEXT("[Save] Written version=%d lifetime=%d speciesPts=%d clutch=%d"),
+		Version, LifetimeScore, UnspentSpeciesPoints, TotalClutches);
 }
 
 void UMosquitoSimulatorGameInstance::Load()
@@ -314,6 +352,8 @@ void UMosquitoSimulatorGameInstance::Load()
 		else if (Key == TEXT("SpeciesWebResistantAdhesion")) { SpeciesWebResistantAdhesion = FMath::Clamp(Value, 0, MaxSpeciesBranchLevel); }
 		else if (Key == TEXT("SpeciesExoskeleton")) { SpeciesExoskeleton = FMath::Clamp(Value, 0, MaxSpeciesBranchLevel); }
 		else if (Key == TEXT("SpeciesAwardBaseScore")) { SpeciesAwardBaseScore = Value; }
+		else if (Key == TEXT("TotalClutches")) { TotalClutches = FMath::Max(0, Value); }
+		else if (Key == TEXT("LastMutation")) { LastMutation = FMath::Clamp(Value, 0, 3); }
 	}
 }
 
@@ -331,4 +371,7 @@ void UMosquitoSimulatorGameInstance::ResetToDefaults(int32 ReasonVersion)
 	SpeciesWebResistantAdhesion = 0;
 	SpeciesExoskeleton = 0;
 	SpeciesAwardBaseScore = 0;
+	// MVP 0.3 A: reset-to-defaults wipes the clutch bookkeeping too (fresh lineage).
+	TotalClutches = 0;
+	LastMutation = 0;
 }

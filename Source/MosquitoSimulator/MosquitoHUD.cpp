@@ -368,7 +368,7 @@ void AMosquitoHUD::DrawDeathPanel(AMosquitoCharacter* Mosquito)
 	}
 
 	const float W = 560.f;
-	const float H = 240.f;
+	const float H = 260.f;
 	const float X = (Canvas->SizeX - W) * 0.5f;
 	const float Y = Canvas->SizeY * 0.5f - 20.f;
 
@@ -377,14 +377,22 @@ void AMosquitoHUD::DrawDeathPanel(AMosquitoCharacter* Mosquito)
 
 	DrawText(TEXT("THE SWARM REMEMBERS HER"), FLinearColor(1.f, 0.4f, 0.3f),
 		X + 12.f, Y + 8.f, GEngine->GetMediumFont());
+	const int32 MutIdx = GameSave->LastMutation;
+	const FString MutName = (MutIdx >= 1 && MutIdx <= 3)
+		? MosquitoProgression::GetSpeciesBranchName(static_cast<ESpeciesBranch>(MutIdx - 1))
+		: FString(TEXT("none yet"));
+
 	DrawText(FString::Printf(
 			TEXT("Run total: %d   Lifetime: %d   Best chase: %d   Generation: %d"),
 			Mosquito->GetTotalScore(), GameSave->LifetimeScore,
 			GameSave->BestChaseScore, GameSave->Generations),
 		FLinearColor(0.9f, 0.85f, 0.8f), X + 12.f, Y + 36.f, GEngine->GetSmallFont());
+	DrawText(FString::Printf(TEXT("Clutches laid: %d   last nest mutation: %s"),
+			GameSave->TotalClutches, *MutName),
+		FLinearColor(0.55f, 0.9f, 0.65f), X + 12.f, Y + 56.f, GEngine->GetSmallFont());
 	DrawText(FString::Printf(TEXT("Species points: %d   (new mosquito: Lv1 run, blood 20, hunger 70 - soft punishment)"),
 			GameSave->UnspentSpeciesPoints),
-		FLinearColor(1.f, 1.f, 0.2f), X + 12.f, Y + 56.f, GEngine->GetSmallFont());
+		FLinearColor(1.f, 1.f, 0.2f), X + 12.f, Y + 76.f, GEngine->GetSmallFont());
 
 	const ESpeciesBranch Branches[3] = {
 		ESpeciesBranch::BloodEfficiency, ESpeciesBranch::WebResistantAdhesion, ESpeciesBranch::Exoskeleton};
@@ -400,7 +408,7 @@ void AMosquitoHUD::DrawDeathPanel(AMosquitoCharacter* Mosquito)
 				i + 1, *MosquitoProgression::GetSpeciesBranchName(Branches[i]),
 				Level, MosquitoProgression::MaxSpeciesBranchLevel,
 				bMaxed ? TEXT("  MAX") : TEXT("")),
-			RowColor, X + 12.f, Y + 84.f + i * 22.f, GEngine->GetMediumFont());
+				RowColor, X + 12.f, Y + 104.f + i * 22.f, GEngine->GetMediumFont());
 	}
 
 	DrawText(TEXT("keys 1-3 buy for the whole lineage - persisted immediately"),
@@ -445,11 +453,14 @@ void AMosquitoHUD::DrawHUD()
 			: ((Wings < 50.f) ? FLinearColor(1.f, 0.7f, 0.1f) : FLinearColor(0.2f, 0.9f, 0.4f));
 		DrawBar(TEXT("Wing HP"), Wings, Mosquito->GetMaxWingCondition(), 4, WingColor);
 
-		// Prompt 12: show death overlay.
+		// Prompt 12: show death overlay. MVP 0.3 A: nest-clutch deaths read LIFE COMPLETE.
 		if (Mosquito->IsDead())
 		{
-			const FString DeadText = TEXT("DEAD — respawning...");
-			DrawText(DeadText, FLinearColor::Red, Canvas->SizeX * 0.5f - 80.f, Canvas->SizeY * 0.5f - 40.f, GEngine->GetLargeFont());
+			const FString DeadText = Mosquito->IsLifeComplete()
+				? TEXT("LIFE COMPLETE - the lineage continues...")
+				: TEXT("DEAD — respawning...");
+			DrawText(DeadText, Mosquito->IsLifeComplete() ? FLinearColor(0.4f, 1.f, 0.5f) : FLinearColor::Red,
+				Canvas->SizeX * 0.5f - 140.f, Canvas->SizeY * 0.5f - 40.f, GEngine->GetLargeFont());
 			DrawDeathPanel(Mosquito);
 		}
 	}

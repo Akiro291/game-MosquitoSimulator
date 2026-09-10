@@ -50,6 +50,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level", meta = (ClampMin = "1"))
 	float SpiderRespawnDelay = 45.f;
 
+	/** MVP 0.3 phase A skeleton: one permanent nest behind the house. */
+	UPROPERTY(EditDefaultsOnly, Category = "Level", meta = (DisplayName = "Spawn Nest"))
+	bool bSpawnNest = true;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Level")
+	FVector NestLocation = FVector(900.f, 120.f, 25.f);
+
 	/** Called by ASpiderCharacter when it dies - arms the strict respawn cooldown. */
 	void NotifySpiderDied();
 

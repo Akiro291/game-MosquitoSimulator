@@ -7,6 +7,7 @@
 #include "MosquitoSimulatorPlayerController.h"
 #include "MosquitoWorldBlockout.h"
 #include "MosquitoHUD.h"
+#include "MosquitoNest.h"
 #include "SpiderCharacter.h"
 #include "Misc/CommandLine.h"
 
@@ -89,6 +90,21 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 			SpiderRespawnDelay = SpiderRespawnOverride;
 		}
 		SpawnSpiderActor();
+	}
+
+	// MVP 0.3 phase A: the nest is permanent - spawn once per world, transient like the rest.
+	if (bSpawnNest && GetWorld() && GetWorld()->IsGameWorld())
+	{
+		FActorSpawnParameters NestParams;
+		NestParams.ObjectFlags |= RF_Transient;
+		NestParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AMosquitoNest* Nest = GetWorld()->SpawnActor<AMosquitoNest>(
+			AMosquitoNest::StaticClass(), FTransform(NestLocation), NestParams);
+		if (!Nest)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[Nest] Spawn FAILED at (%.0f, %.0f, %.0f)"),
+				NestLocation.X, NestLocation.Y, NestLocation.Z);
+		}
 	}
 
 	if (DefaultMap != NAME_None)
