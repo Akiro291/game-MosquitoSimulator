@@ -303,9 +303,18 @@ void UMosquitoSimulatorGameInstance::SaveNow()
 	Lines.Add(FString::Printf(TEXT("TotalClutches=%d"), TotalClutches));
 	Lines.Add(FString::Printf(TEXT("LastMutation=%d"), LastMutation));
 
-	if (!FFileHelper::SaveStringArrayToFile(Lines, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	// Atomic write: temp file first, then replace - a crash mid-write can never
+	// corrupt the previous save (the loader also tolerates garbage, belt & braces).
+	const FString TempPath = Path + TEXT(".tmp");
+	if (!FFileHelper::SaveStringArrayToFile(Lines, *TempPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Save] FAILED writing %s"), *Path);
+		UE_LOG(LogTemp, Warning, TEXT("[Save] FAILED writing %s"), *TempPath);
+		return;
+	}
+	IFileManager::Get().Delete(*Path); // MoveFile over an existing file needs ReplaceExisting semantics
+	if (!IFileManager::Get().Move(*Path, *TempPath, /*bReplace=*/true))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Save] FAILED to move %s -> %s"), *TempPath, *Path);
 		return;
 	}
 	bDirty = false;
