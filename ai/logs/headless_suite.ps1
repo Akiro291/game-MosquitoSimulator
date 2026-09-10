@@ -130,6 +130,12 @@ try {
         '[Spider] Spawn OK' = 2; 'Died +reward: web cleared' = 2;
         'Force bite 3/3 counted=yes' = 2; 'Cooldown over - rebuilding the web' = 2 }
 
+    # 18: multi-nest data-driven spawn - three nests exist, exactly one clutch fires
+    # (HasClutchedThisRun gate is per mosquito run, not per nest).
+    Run-Scenario '18_multi_nest' @('-WipeSave', '-NestTest', '-NestCount=3') 12 @{
+        '[Nest] at' = 3; 'Clutch #1 booked' = 1;
+        'NestDev] Test complete: TotalClutches=1' = 3 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')

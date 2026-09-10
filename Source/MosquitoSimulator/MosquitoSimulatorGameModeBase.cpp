@@ -113,18 +113,34 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 		}
 	}
 
-	// MVP 0.3 phase A: the nest is permanent - spawn once per world, transient like the rest.
+	// MVP 0.3 phase A: nests are permanent - spawn once per world, transient like the rest.
 	if (bSpawnNest && GetWorld() && GetWorld()->IsGameWorld())
 	{
+		if (NestLocations.IsEmpty())
+		{
+			NestLocations.Add(FVector(900.f, 120.f, 25.f)); // behind the house
+		}
+		int32 NestCountOverride = 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("NestCount="), NestCountOverride) && NestCountOverride > NestLocations.Num())
+		{
+			const FVector Base = NestLocations[0];
+			while (NestLocations.Num() < NestCountOverride)
+			{
+				NestLocations.Add(Base + FVector(0.f, 2000.f * NestLocations.Num(), 0.f));
+			}
+		}
 		FActorSpawnParameters NestParams;
 		NestParams.ObjectFlags |= RF_Transient;
 		NestParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AMosquitoNest* Nest = GetWorld()->SpawnActor<AMosquitoNest>(
-			AMosquitoNest::StaticClass(), FTransform(NestLocation), NestParams);
-		if (!Nest)
+		for (const FVector& NestLocation : NestLocations)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Nest] Spawn FAILED at (%.0f, %.0f, %.0f)"),
-				NestLocation.X, NestLocation.Y, NestLocation.Z);
+			AMosquitoNest* Nest = GetWorld()->SpawnActor<AMosquitoNest>(
+				AMosquitoNest::StaticClass(), FTransform(NestLocation), NestParams);
+			if (!Nest)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[Nest] Spawn FAILED at (%.0f, %.0f, %.0f)"),
+					NestLocation.X, NestLocation.Y, NestLocation.Z);
+			}
 		}
 	}
 
