@@ -74,3 +74,6 @@ Build/
 *.sln
 *.slnx
 *.vsconfig
+
+# headless suite per-run logs (regenerated, not history)
+ai/logs/suite/
