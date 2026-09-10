@@ -229,14 +229,25 @@ void UMosquitoSimulatorGameInstance::NotifyClutchLaid()
 	++UnspentSpeciesPoints; // guaranteed biological payout for reaching the nest
 
 	// Deterministic mutation roll so the headless proof is reproducible: seeded
-	// by the clutch number, ONE species branch +1 level. Skeleton rule for the
-	// future generation screen: clutches also REROLL variety, purchases pay it.
+	// by the clutch number, ONE species branch +1 level. If the rolled branch is
+	// already maxed, walk forward to the next non-max one (a clutch never wastes
+	// its mutation). All three maxed -> skip.
 	FRandomStream Rng(20260910 + TotalClutches * 7919);
 	const int32 Roll = Rng.RandRange(0, 2);
-	const ESpeciesBranch Branch = static_cast<ESpeciesBranch>(Roll);
+	ESpeciesBranch Branch = ESpeciesBranch::BloodEfficiency;
+	bool bFound = false;
+	for (int32 Offset = 0; Offset <= 2 && !bFound; ++Offset)
+	{
+		const ESpeciesBranch Candidate = static_cast<ESpeciesBranch>((Roll + Offset) % 3);
+		if (GetSpeciesBranchLevel(Candidate) < MaxSpeciesBranchLevel)
+		{
+			Branch = Candidate;
+			bFound = true;
+		}
+	}
 	bool bApplied = false;
-	int32 NewLevel = GetSpeciesBranchLevel(Branch);
-	if (NewLevel < MaxSpeciesBranchLevel)
+	int32 NewLevel = 0;
+	if (bFound)
 	{
 		switch (Branch)
 		{

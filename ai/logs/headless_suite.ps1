@@ -136,6 +136,13 @@ try {
         '[Nest] at' = 3; 'Clutch #1 booked' = 1;
         'NestDev] Test complete: TotalClutches=1' = 3 }
 
+    # 19: mutation fallback - clutch #1 rolls Exoskeleton (deterministic seed), it is
+    # already MAX in the seeded save -> walk to next branch, never waste the mutation.
+    Set-Content -Path $save -Value "[MosquitoSave]`r`nVersion=1`r`nSpeciesExoskeleton=3`r`n" -Encoding ascii
+    Run-Scenario '19_mutation_fallback' @('-NestTest') 12 @{
+        'mutation: Blood Efficiency -> L1' = 1 } `
+        @{ 'mutation: Exoskeleton' = 1 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')
