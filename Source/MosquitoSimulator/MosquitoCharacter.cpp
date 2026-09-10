@@ -698,13 +698,14 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 			PC->AddPitchInput(FMath::RandRange(-StepDeg, StepDeg));
 			PC->AddYawInput(FMath::RandRange(-StepDeg, StepDeg));
 
-			// ---- TEMP DIAGNOSTICS: camera shake source (every ~1 s) ----
+			// TEMP diagnostics (PIE-verified 2026-09): downgraded to Verbose per the
+			// cleanup plan in PROGRESS.md - shake itself, caps and behaviour untouched.
 			static float CameraShakeDiagTimer = 0.f;
 			CameraShakeDiagTimer += DeltaTime;
 			if (CameraShakeDiagTimer >= 1.f)
 			{
 				CameraShakeDiagTimer = 0.f;
-				UE_LOG(LogTemp, Warning, TEXT("[Mosquito::CameraShake] ACTIVE wings=%.1f health=%.1f shakeMaxDeg=%.2f (deg per frame, hard cap 0.40)"),
+				UE_LOG(LogTemp, Verbose, TEXT("[Mosquito::CameraShake] ACTIVE wings=%.1f health=%.1f shakeMaxDeg=%.2f (deg per frame, hard cap 0.40)"),
 					WingCondition, CurrentHealth, StepDeg);
 			}
 		}
