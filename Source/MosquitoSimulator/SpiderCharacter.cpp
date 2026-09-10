@@ -130,13 +130,13 @@ void ASpiderCharacter::DieAndReward(AMosquitoCharacter* Mosquito)
 {
 	UE_LOG(LogTemp, Warning, TEXT("[Spider] Died +reward: web cleared, %d Score/XP paid"), RewardScore);
 
-	// PIE-FIX #3: hand the kill to the GameMode - the web rebuilds ONLY after its
+	// PIE-FIX #3: hand the kill to the GameMode - this web rebuilds ONLY after its
 	// strict SpiderRespawnDelay (no instant re-spawn, no double spawn ever).
 	if (AGameModeBase* GM = GetWorld() ? GetWorld()->GetAuthGameMode() : nullptr)
 	{
 		if (AMosquitoSimulatorGameModeBase* MosquitoGM = Cast<AMosquitoSimulatorGameModeBase>(GM))
 		{
-			MosquitoGM->NotifySpiderDied();
+			MosquitoGM->NotifySpiderDied(WebIndex);
 		}
 	}
 

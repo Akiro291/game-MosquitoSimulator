@@ -124,6 +124,12 @@ try {
         'TRAPPED in spider web' = 1;
         'Respawned! blood=20 hunger=70 maxHealth=100 trapped=0' = 1 }
 
+    # 17: multi-web data-driven spawn - two independent spiders, each with its own
+    # kill -> per-web cooldown -> rebuild (default single-web behavior stays 01/05).
+    Run-Scenario '17_multi_web' @('-WipeSave', '-KillSpider', '-SpiderWebs=2', '-SpiderRespawn=4') 15 @{
+        '[Spider] Spawn OK' = 2; 'Died +reward: web cleared' = 2;
+        'Force bite 3/3 counted=yes' = 2; 'Cooldown over - rebuilding the web' = 2 }
+
     Write-Host ''
     $script:results | Format-Table -AutoSize
     $failed = @($script:results | Where-Object Status -eq 'FAIL')

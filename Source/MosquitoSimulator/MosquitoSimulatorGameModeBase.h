@@ -42,9 +42,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Level", meta = (DisplayName = "Spawn Spider"))
 	bool bSpawnSpider = true;
 
-	/** Web center (1 uu = 1 cm), by TreeTrunk2 (-800, 650). */
+	/** Spider webs (1 uu = 1 cm) - each web gets its own spider + its own respawn
+	    cooldown. Default (set in BeginPlay when empty): one web by TreeTrunk2. */
 	UPROPERTY(EditDefaultsOnly, Category = "Level")
-	FVector SpiderWebLocation = FVector(-800.f, 650.f, 60.f);
+	TArray<FVector> SpiderWebLocations;
 
 	/** PIE-FIX #3: a killed spider takes the web back only after this cooldown. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level", meta = (ClampMin = "1"))
@@ -57,15 +58,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Level")
 	FVector NestLocation = FVector(900.f, 120.f, 25.f);
 
-	/** Called by ASpiderCharacter when it dies - arms the strict respawn cooldown. */
-	void NotifySpiderDied();
+	/** Called by ASpiderCharacter when it dies - arms the strict per-web respawn cooldown. */
+	void NotifySpiderDied(int32 WebIndex);
 
 private:
-	void SpawnSpiderActor();
-	void RespawnSpider();
+	struct FSpiderWeb
+	{
+		TWeakObjectPtr<ASpiderCharacter> Spider;
+		FTimerHandle RespawnTimer;
+	};
 
-	TWeakObjectPtr<ASpiderCharacter> ActiveSpider;
-	FTimerHandle SpiderRespawnTimerHandle;
+	void SpawnSpiderAt(int32 WebIndex);
+	void RespawnSpiderWeb(int32 WebIndex);
+
+	TArray<FSpiderWeb> SpiderWebs;
 
 	/** World-space spawn points (1 uu = 1 cm) for the human NPCs. */
 	UPROPERTY(EditDefaultsOnly, Category = "Level")

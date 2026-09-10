@@ -80,7 +80,7 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 			DayNight ? TEXT("spawned") : TEXT("FAILED"));
 	}
 
-	// MVP 0.2 §1: one spider on one web in the NW quadrant - transient, like humans.
+	// MVP 0.2 §1: one spider per web (default: a single web in the NW quadrant).
 	if (bSpawnSpider && GetWorld() && GetWorld()->IsGameWorld())
 	{
 		// Dev override for headless cooldown verification: -SpiderRespawn=N.
@@ -89,7 +89,28 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 		{
 			SpiderRespawnDelay = SpiderRespawnOverride;
 		}
-		SpawnSpiderActor();
+
+		if (SpiderWebLocations.IsEmpty())
+		{
+			SpiderWebLocations.Add(FVector(-800.f, 650.f, 60.f)); // by TreeTrunk2
+		}
+		// Dev override for multi-web headless verification: -SpiderWebs=N
+		// (duplicates the default web, offset 15 m apart so zones never share a center).
+		int32 SpiderWebsOverride = 0;
+		if (FParse::Value(FCommandLine::Get(), TEXT("SpiderWebs="), SpiderWebsOverride) && SpiderWebsOverride > SpiderWebLocations.Num())
+		{
+			const FVector Base = SpiderWebLocations[0];
+			while (SpiderWebLocations.Num() < SpiderWebsOverride)
+			{
+				SpiderWebLocations.Add(Base + FVector(1500.f * SpiderWebLocations.Num(), 0.f, 0.f));
+			}
+		}
+
+		SpiderWebs.SetNum(SpiderWebLocations.Num());
+		for (int32 i = 0; i < SpiderWebLocations.Num(); ++i)
+		{
+			SpawnSpiderAt(i);
+		}
 	}
 
 	// MVP 0.3 phase A: the nest is permanent - spawn once per world, transient like the rest.
@@ -113,48 +134,60 @@ void AMosquitoSimulatorGameModeBase::BeginPlay()
 	}
 }
 
-void AMosquitoSimulatorGameModeBase::SpawnSpiderActor()
+void AMosquitoSimulatorGameModeBase::SpawnSpiderAt(int32 WebIndex)
 {
+	if (!SpiderWebLocations.IsValidIndex(WebIndex))
+	{
+		return;
+	}
+	const FVector& WebLocation = SpiderWebLocations[WebIndex];
 	FActorSpawnParameters SpiderParams;
 	SpiderParams.ObjectFlags |= RF_Transient;
 	SpiderParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	ASpiderCharacter* Spider = GetWorld()->SpawnActor<ASpiderCharacter>(
-		ASpiderCharacter::StaticClass(), FTransform(SpiderWebLocation), SpiderParams);
+		ASpiderCharacter::StaticClass(), FTransform(WebLocation), SpiderParams);
 	if (!Spider)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[Spider] Spawn FAILED at (%.0f, %.0f, %.0f)"),
-			SpiderWebLocation.X, SpiderWebLocation.Y, SpiderWebLocation.Z);
+			WebLocation.X, WebLocation.Y, WebLocation.Z);
 		return;
 	}
-	ActiveSpider = Spider;
+	Spider->WebIndex = WebIndex;
+	SpiderWebs[WebIndex].Spider = Spider;
 }
 
-void AMosquitoSimulatorGameModeBase::NotifySpiderDied()
+void AMosquitoSimulatorGameModeBase::NotifySpiderDied(int32 WebIndex)
 {
-	if (!GetWorld())
+	if (!GetWorld() || !SpiderWebs.IsValidIndex(WebIndex))
 	{
 		return;
 	}
 	// PIE-FIX #3 (owner report): kills used to leave the web empty forever within a
 	// session, or the spider came back at an arbitrary moment on world restarts.
-	// Now: exactly one timer, strict SpiderRespawnDelay, no double-arming.
-	ActiveSpider = nullptr;
-	if (SpiderRespawnTimerHandle.IsValid())
+	// Now: exactly one timer PER WEB, strict SpiderRespawnDelay, no double-arming.
+	FSpiderWeb& Web = SpiderWebs[WebIndex];
+	Web.Spider = nullptr;
+	if (Web.RespawnTimer.IsValid())
 	{
-		return; // a respawn is already scheduled
+		return; // a respawn is already scheduled for this web
 	}
-	GetWorldTimerManager().SetTimer(SpiderRespawnTimerHandle, this,
-		&AMosquitoSimulatorGameModeBase::RespawnSpider, SpiderRespawnDelay, false);
-	UE_LOG(LogTemp, Display, TEXT("[Spider] Cooldown %.0f s until the web is rebuilt"), SpiderRespawnDelay);
+	GetWorldTimerManager().SetTimer(Web.RespawnTimer, FTimerDelegate::CreateUObject(
+		this, &AMosquitoSimulatorGameModeBase::RespawnSpiderWeb, WebIndex), SpiderRespawnDelay, false);
+	UE_LOG(LogTemp, Display, TEXT("[Spider] Cooldown %.0f s until web %d is rebuilt"), SpiderRespawnDelay, WebIndex);
 }
 
-void AMosquitoSimulatorGameModeBase::RespawnSpider()
+void AMosquitoSimulatorGameModeBase::RespawnSpiderWeb(int32 WebIndex)
 {
-	SpiderRespawnTimerHandle.Invalidate();
-	if (ActiveSpider.IsValid())
+	if (!SpiderWebs.IsValidIndex(WebIndex))
+	{
+		return;
+	}
+	FSpiderWeb& Web = SpiderWebs[WebIndex];
+	Web.RespawnTimer.Invalidate();
+	if (Web.Spider.IsValid())
 	{
 		return; // a spider is somehow alive already - never double-spawn
 	}
 	UE_LOG(LogTemp, Display, TEXT("[Spider] Cooldown over - rebuilding the web"));
-	SpawnSpiderActor();
+	SpawnSpiderAt(WebIndex);
 }

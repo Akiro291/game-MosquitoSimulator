@@ -53,6 +53,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Spider")
 	ESpiderState GetState() const { return CurrentState; }
 
+	/** Index of this spider's entry in GameMode SpiderWebLocations (set at spawn). */
+	int32 WebIndex = INDEX_NONE;
+
 	/**
 	 * MVP 0.2 §1: the player bites back (same LMB distance path as landing).
 	 * A hit counts ONLY while the spider is in its attack windup - the one
