@@ -48,6 +48,7 @@ void AMosquitoNest::BeginPlay()
 
 	NestCenter = GetActorLocation();
 	bDevTest = FParse::Param(FCommandLine::Get(), TEXT("NESTTEST"));
+	bDevDismiss = FParse::Param(FCommandLine::Get(), TEXT("NESTDISMISSTEST"));
 
 	MosquitoPaint::PaintMesh(DishMesh, FLinearColor(0.32f, 0.22f, 0.10f)); // straw brown
 	MosquitoPaint::PaintMesh(EggMesh, FLinearColor(0.85f, 0.82f, 0.75f));  // pale eggs
@@ -85,23 +86,33 @@ void AMosquitoNest::Tick(float DeltaTime)
 		DevTestTick(DeltaTime, Mosquito);
 	}
 
-	// Clutch gate (query only): a living, not-yet-reproduced, full-enough mosquito
-	// inside the radius completes its life through the existing death accounting.
-	if (!Mosquito->IsDead() && !Mosquito->HasClutchedThisRun() &&
-		Mosquito->GetBlood() >= BloodRequiredToClutch &&
-		FVector::Dist(Mosquito->GetActorLocation(), NestCenter) <= NestRadius)
+	// Generation screen gate (query only): entering the radius with enough blood
+	// AUTO-OPENS the screen (owner spec); Esc dismisses the visit until the player
+	// leaves and re-enters; Enter confirms the clutch (mosquito-side input handler).
+	const bool bInNest = FVector::Dist(Mosquito->GetActorLocation(), NestCenter) <= NestRadius;
+	if (bInNest)
 	{
-		Mosquito->CompleteLifeCycle(ClutchScore);
+		if (!Mosquito->IsDead() && !Mosquito->HasClutchedThisRun() &&
+			Mosquito->GetBlood() >= BloodRequiredToClutch)
+		{
+			Mosquito->OpenGenerationScreen(this, ClutchScore);
+		}
+	}
+	else
+	{
+		Mosquito->ResetNestVisit(this);
 	}
 }
 
 void AMosquitoNest::DevTestTick(float DeltaTime, AMosquitoCharacter* Mosquito)
 {
-	if (DevStage >= 2)
+	if (DevStage >= 9)
 	{
 		return;
 	}
 	DevTimer += DeltaTime;
+
+	const auto GameSave = GetWorld() ? GetWorld()->GetGameInstance<UMosquitoSimulatorGameInstance>() : nullptr;
 
 	if (DevStage == 0 && DevTimer >= 1.5f)
 	{
@@ -111,13 +122,64 @@ void AMosquitoNest::DevTestTick(float DeltaTime, AMosquitoCharacter* Mosquito)
 		UE_LOG(LogTemp, Display, TEXT("[NestDev] Seeded blood + teleported to the nest (blood=%.0f need=%.0f)"),
 			Mosquito->GetBlood(), BloodRequiredToClutch);
 	}
-	else if (DevStage == 1 && DevTimer >= 5.f)
+
+	if (DevStage == 1 && !bDevDismiss)
 	{
-		DevStage = 2;
-		const UMosquitoSimulatorGameInstance* GameSave =
-			GetWorld() ? GetWorld()->GetGameInstance<UMosquitoSimulatorGameInstance>() : nullptr;
-		const int32 Clutches = GameSave ? GameSave->TotalClutches : -1;
-		UE_LOG(LogTemp, Display, TEXT("[NestDev] Test complete: TotalClutches=%d %s"),
-			Clutches, Clutches >= 1 ? TEXT("(clutch + generation bonus proven)") : TEXT("- FAIL"));
+		// plain flow: t=3 Enter-confirm, t=5 verdict.
+		if (!bDevConfirmed && DevTimer >= 3.f)
+		{
+			bDevConfirmed = true;
+			Mosquito->ConfirmClutch();
+		}
+		if (DevTimer >= 5.f)
+		{
+			DevStage = 9;
+			const int32 Clutches = GameSave ? GameSave->TotalClutches : -1;
+			UE_LOG(LogTemp, Display, TEXT("[NestDev] Test complete: TotalClutches=%d %s"),
+				Clutches, Clutches >= 1 ? TEXT("(clutch + generation bonus proven)") : TEXT("- FAIL"));
+		}
+		return;
+	}
+
+	if (DevStage == 1 && bDevDismiss)
+	{
+		// dismiss flow: Esc blocks confirm until a real fly-out/fly-in.
+		if (!bDevDismissed && DevTimer >= 2.5f)
+		{
+			bDevDismissed = true;
+			Mosquito->DismissGenerationScreen();
+		}
+		if (bDevDismissed && !bDevConfirmed && DevTimer >= 3.f)
+		{
+			bDevConfirmed = true;
+			const int32 Before = GameSave ? GameSave->TotalClutches : 0;
+			Mosquito->ConfirmClutch(); // must be ignored - screen closed
+			const int32 After = GameSave ? GameSave->TotalClutches : -1;
+			UE_LOG(LogTemp, Display, TEXT("[NestDev] Confirm-after-Esc ignored=%s (clutch %d->%d)"),
+				(Before == After) ? TEXT("yes") : TEXT("NO - FAIL"), Before, After);
+		}
+		if (bDevConfirmed && !bDevFlewOut && DevTimer >= 3.5f)
+		{
+			bDevFlewOut = true;
+			Mosquito->ResetNestVisit(this); // fly out (one-shot: holding the pose outside
+			Mosquito->SetActorLocation(NestCenter + FVector(500.f, 0.f, 30.f)); // would keep closing the reopened screen)
+		}
+		if (bDevFlewOut && !bDevSecondEntry && DevTimer >= 4.f)
+		{
+			bDevSecondEntry = true;
+			Mosquito->SetActorLocation(NestCenter + FVector(0.f, 0.f, 30.f)); // fly back in -> reopens
+		}
+		if (bDevSecondEntry && !bDevConfirmed2 && DevTimer >= 4.5f)
+		{
+			bDevConfirmed2 = true;
+			Mosquito->ConfirmClutch(); // now it must land
+		}
+		if (bDevSecondEntry && DevTimer >= 5.5f)
+		{
+			DevStage = 9;
+			const int32 Clutches = GameSave ? GameSave->TotalClutches : -1;
+			UE_LOG(LogTemp, Display, TEXT("[NestDev] Dismiss test complete: TotalClutches=%d %s"),
+				Clutches, Clutches == 1 ? TEXT("(Esc blocked, re-entry reopened, Enter confirmed)") : TEXT("- FAIL"));
+		}
 	}
 }

@@ -84,7 +84,7 @@ try {
         'Cooldown over - rebuilding the web' = 1 }
     Run-Scenario '06_nest' @('-WipeSave', '-NestTest') 12 @{
         'LIFE COMPLETE - clutch laid' = 1; 'Clutch #1 booked' = 1;
-        'NestDev] Test complete: TotalClutches=1' = 1 }
+        'NestDev] Test complete: TotalClutches=1' = 1; 'Generation screen opened' = 1 }
     Run-Scenario '07_nest_read' @() 0 @{
         'clutch=1 lastMut=3' = 1; 'Species inherited at spawn: Exoskeleton +10 HP' = 1 }
     Run-Scenario '08_deathloop' @('-WipeSave', '-SeedScore=420', '-KillMe') 15 @{
@@ -142,6 +142,13 @@ try {
     Run-Scenario '19_mutation_fallback' @('-NestTest') 12 @{
         'mutation: Blood Efficiency -> L1' = 1 } `
         @{ 'mutation: Exoskeleton' = 1 }
+
+    # 20: generation screen lifecycle - auto-open, Esc dismisses (confirm blocked),
+    # fly out/in re-opens, Enter then confirms (owner spec).
+    Run-Scenario '20_gen_screen' @('-WipeSave', '-NestTest', '-NestDismissTest') 12 @{
+        'Confirm-after-Esc ignored=yes' = 1; 'Dismiss test complete: TotalClutches=1' = 1;
+        'Generation screen opened' = 2; 'Clutch #1 booked' = 1 } `
+        @{ ' - FAIL' = 1 }
 
     Write-Host ''
     $script:results | Format-Table -AutoSize

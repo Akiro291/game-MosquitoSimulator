@@ -55,8 +55,14 @@ private:
 
 	// --- Dev hook -NestTest (plan A skeleton verification) ---
 	bool bDevTest = false;
+	bool bDevDismiss = false; // -NestDismissTest: Esc must block re-open until fly out/in
 	float DevTimer = 0.f;
 	int32 DevStage = 0;
+	bool bDevConfirmed = false;
+	bool bDevDismissed = false;
+	bool bDevFlewOut = false;
+	bool bDevSecondEntry = false;
+	bool bDevConfirmed2 = false;
 
 	void DevTestTick(float DeltaTime, AMosquitoCharacter* Mosquito);
 };

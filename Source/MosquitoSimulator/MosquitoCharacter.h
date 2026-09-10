@@ -176,6 +176,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Life")
 	bool IsLifeComplete() const { return bLifeComplete; }
 
+	/** MVP 0.3 A: generation screen (auto-open in the nest radius, Esc dismisses,
+	    re-opens only after leaving and re-entering; Enter confirms the clutch). */
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Life")
+	bool IsGenerationScreenOpen() const { return bGenerationScreenOpen; }
+
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Life")
+	int32 GetPendingClutchReward() const { return PendingClutchReward; }
+
+	void OpenGenerationScreen(AActor* Nest, int32 Reward);
+	void ConfirmClutch();
+	void DismissGenerationScreen();
+	/** Nest calls when the player leaves its radius: clears the Esc-dismiss and closes
+	    (only while this nest owns the visit - other nests must not interfere). */
+	void ResetNestVisit(AActor* Nest);
+
 	// --- MVP 0.2 §3/§4: run-upgrade panel (Tab; purchase keys 1-4; NO world pause) ---
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Progression")
 	bool IsUpgradePanelOpen() const { return bUpgradePanelOpen; }
@@ -284,6 +299,15 @@ protected:
 	// --- MVP 0.3 phase A: clutch state (per run, reset in Respawn) ---
 	bool bClutchedThisRun = false;
 	bool bLifeComplete = false;
+
+	// --- MVP 0.3 A: generation screen runtime ---
+	bool bGenerationScreenOpen = false;
+	bool bNestVisitDismissed = false;
+	int32 PendingClutchReward = 0;
+	TWeakObjectPtr<AActor> ActiveNestVisit;
+
+	void OnGenerationConfirm(const FInputActionValue& Value);
+	void OnGenerationCancel(const FInputActionValue& Value);
 
 	// Dev flags (plan §4 Verification headless): -SeedScore=N, -KillMe
 	bool bDevKillSelf = false;
@@ -446,6 +470,12 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UInputAction> UpgradePanelAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> GenerationConfirmAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> GenerationCancelAction;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UInputAction>> BranchActions;

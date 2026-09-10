@@ -52,6 +52,9 @@ protected:
 	/** MVP 0.2 §3.1: WEB AHEAD chip + centered escape meter while trapped. */
 	void DrawWebStatus(class AMosquitoCharacter* Mosquito);
 
+	/** MVP 0.3 A: generation screen (auto-opened inside the nest radius). */
+	void DrawGenerationScreen(class AMosquitoCharacter* Mosquito);
+
 	UPROPERTY(EditDefaultsOnly, Category = "HUD")
 	float BarWidth = 140.f;
 

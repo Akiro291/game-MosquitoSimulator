@@ -270,6 +270,56 @@ void AMosquitoHUD::DrawWebStatus(AMosquitoCharacter* Mosquito)
 	}
 }
 
+void AMosquitoHUD::DrawGenerationScreen(AMosquitoCharacter* Mosquito)
+{
+	if (!Mosquito || !Canvas || !Mosquito->IsGenerationScreenOpen())
+	{
+		return;
+	}
+	const UMosquitoSimulatorGameInstance* GameSave = GetGameSave(this);
+	if (!GameSave)
+	{
+		return;
+	}
+
+	const float W = 520.f;
+	const float H = 210.f;
+	const float X = (Canvas->SizeX - W) * 0.5f;
+	const float Y = (Canvas->SizeY - H) * 0.5f;
+
+	DrawRect(FLinearColor::Black, X - 2.f, Y - 2.f, W + 4.f, H + 4.f);
+	DrawRect(FLinearColor(0.05f, 0.07f, 0.05f, 0.93f), X, Y, W, H);
+	DrawText(TEXT("THE NEST - your life's work"), FLinearColor(0.5f, 1.f, 0.6f),
+		X + 12.f, Y + 8.f, GEngine->GetMediumFont());
+
+	if (GameSave)
+	{
+		DrawText(FString::Printf(TEXT("Run: Lv%d  score %d   |   lineage: Gen %d, clutches %d, species pts %d"),
+				GameSave->RunLevel, Mosquito->GetTotalScore(), GameSave->Generations,
+				GameSave->TotalClutches, GameSave->UnspentSpeciesPoints),
+			FLinearColor(0.9f, 0.85f, 0.8f), X + 12.f, Y + 40.f, GEngine->GetSmallFont());
+
+		const ESpeciesBranch Branches[3] = {
+			ESpeciesBranch::BloodEfficiency, ESpeciesBranch::WebResistantAdhesion, ESpeciesBranch::Exoskeleton};
+		for (int32 i = 0; i < 3; ++i)
+		{
+			const int32 Level = GameSave->GetSpeciesBranchLevel(Branches[i]);
+			const FLinearColor RowColor = Level >= MosquitoProgression::MaxSpeciesBranchLevel
+				? FLinearColor(0.5f, 0.5f, 0.5f) : FLinearColor(0.4f, 1.f, 0.5f);
+			DrawText(FString::Printf(TEXT("%s  L%d/%d"),
+					*MosquitoProgression::GetSpeciesBranchName(Branches[i]),
+					Level, MosquitoProgression::MaxSpeciesBranchLevel),
+				RowColor, X + 12.f, Y + 64.f + i * 22.f, GEngine->GetMediumFont());
+		}
+	}
+
+	DrawText(FString::Printf(TEXT("[Enter] lay the clutch (+%d score, +1 species pt, +1 mutation)"),
+			Mosquito->GetPendingClutchReward()),
+		FLinearColor(1.f, 1.f, 0.2f), X + 12.f, Y + H - 44.f, GEngine->GetSmallFont());
+	DrawText(TEXT("[Esc] fly away (re-enter the nest to open again)"),
+		FLinearColor(0.7f, 0.7f, 0.7f), X + 12.f, Y + H - 24.f, GEngine->GetSmallFont());
+}
+
 void AMosquitoHUD::DrawRunProgress(AMosquitoCharacter* Mosquito)
 {
 	if (!Mosquito || !Canvas)
@@ -472,6 +522,7 @@ void AMosquitoHUD::DrawHUD()
 	DrawRunProgress(Mosquito);
 	DrawWebStatus(Mosquito);
 	DrawUpgradePanel(Mosquito);
+	DrawGenerationScreen(Mosquito);
 	DrawCrosshair();
 }
 

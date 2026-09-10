@@ -142,6 +142,8 @@ AMosquitoCharacter::AMosquitoCharacter()
 
 	// MVP 0.2 §4: panel + four run-branch purchase actions.
 	UpgradePanelAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_UpgradePanel"));
+	GenerationConfirmAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_GenConfirm"));
+	GenerationCancelAction = CreateDefaultSubobject<UInputAction>(TEXT("IA_GenCancel"));
 	BranchActions.Reset();
 	static const FName BranchActionNames[4] = {
 		TEXT("IA_Branch1"), TEXT("IA_Branch2"), TEXT("IA_Branch3"), TEXT("IA_Branch4")};
@@ -178,6 +180,9 @@ AMosquitoCharacter::AMosquitoCharacter()
 
 	// MVP 0.2 §4: Tab opens the upgrade panel; 1-4 buy the branches while it's open.
 	FlightContext->MapKey(UpgradePanelAction, EKeys::Tab);
+	// MVP 0.3 A: generation screen - Enter lays the clutch, Esc dismisses the visit.
+	FlightContext->MapKey(GenerationConfirmAction, EKeys::Enter);
+	FlightContext->MapKey(GenerationCancelAction, EKeys::Escape);
 	FlightContext->MapKey(BranchActions[0], EKeys::One);
 	FlightContext->MapKey(BranchActions[1], EKeys::Two);
 	FlightContext->MapKey(BranchActions[2], EKeys::Three);
@@ -288,6 +293,8 @@ void AMosquitoCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		EnhancedInput->BindAction(StruggleAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnStruggleStarted);
 		EnhancedInput->BindAction(StruggleAction, ETriggerEvent::Completed, this, &AMosquitoCharacter::OnStruggleCompleted);
 		EnhancedInput->BindAction(UpgradePanelAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnToggleUpgradePanel);
+		EnhancedInput->BindAction(GenerationConfirmAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnGenerationConfirm);
+		EnhancedInput->BindAction(GenerationCancelAction, ETriggerEvent::Started, this, &AMosquitoCharacter::OnGenerationCancel);
 		EnhancedInput->BindAction(BranchActions[0], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchWingControl);
 		EnhancedInput->BindAction(BranchActions[1], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchPropulsion);
 		EnhancedInput->BindAction(BranchActions[2], ETriggerEvent::Started, this, &AMosquitoCharacter::OnBuyBranchWebEscape);
@@ -470,8 +477,77 @@ void AMosquitoCharacter::CompleteLifeCycle(int32 RewardPoints)
 	}
 
 	// Reuse the proven death-loop accounting verbatim (Generations++, lifetime-species
-	// award, save). A bespoke generation screen is the next phase after this skeleton.
+	// award, save).
 	Die();
+}
+
+// --- MVP 0.3 A: generation screen (owner spec: auto-open in radius, Esc closes,
+// re-open only after leaving and re-entering the radius, Enter confirms) ------------
+
+void AMosquitoCharacter::OpenGenerationScreen(AActor* Nest, int32 Reward)
+{
+	if (bDead || bClutchedThisRun)
+	{
+		return;
+	}
+	if (ActiveNestVisit.Get() != Nest)
+	{
+		// a different nest = a fresh visit (the old one's Esc-dismiss doesn't apply)
+		ActiveNestVisit = Nest;
+		bNestVisitDismissed = false;
+	}
+	if (bNestVisitDismissed)
+	{
+		return;
+	}
+	PendingClutchReward = Reward;
+	if (!bGenerationScreenOpen)
+	{
+		bGenerationScreenOpen = true;
+		UE_LOG(LogTemp, Display, TEXT("[Nest] Generation screen opened (Enter lays the clutch, Esc leaves)"));
+	}
+}
+
+void AMosquitoCharacter::ConfirmClutch()
+{
+	if (!bGenerationScreenOpen)
+	{
+		return;
+	}
+	bGenerationScreenOpen = false;
+	CompleteLifeCycle(PendingClutchReward);
+}
+
+void AMosquitoCharacter::DismissGenerationScreen()
+{
+	if (!bGenerationScreenOpen)
+	{
+		return;
+	}
+	bGenerationScreenOpen = false;
+	bNestVisitDismissed = true; // blocks auto-reopen until the visit resets (fly out)
+	UE_LOG(LogTemp, Log, TEXT("[Nest] Generation screen dismissed - fly out and back to reopen"));
+}
+
+void AMosquitoCharacter::ResetNestVisit(AActor* Nest)
+{
+	if (ActiveNestVisit.Get() != Nest)
+	{
+		return; // not our visit - another nest owns it (or none)
+	}
+	ActiveNestVisit = nullptr;
+	bGenerationScreenOpen = false;
+	bNestVisitDismissed = false;
+}
+
+void AMosquitoCharacter::OnGenerationConfirm(const FInputActionValue& Value)
+{
+	ConfirmClutch();
+}
+
+void AMosquitoCharacter::OnGenerationCancel(const FInputActionValue& Value)
+{
+	DismissGenerationScreen();
 }
 
 void AMosquitoCharacter::EscapeWeb()
@@ -844,6 +920,7 @@ void AMosquitoCharacter::Die()
 	bDead = true;
 	DeathTimer = 0.f;
 	bUpgradePanelOpen = false;
+	bGenerationScreenOpen = false; // died while looking at the screen (spider/hand)
 
 	// MVP 0.2 §4/§5: death accounting in the Die->Respawn loop. Species points are
 	// awarded at the START of the death window so the death-screen panel (plan §3.4,
@@ -877,6 +954,9 @@ void AMosquitoCharacter::Respawn()
 	// MVP 0.3 A: every new mosquito gets its own chance to reach the nest.
 	bClutchedThisRun = false;
 	bLifeComplete = false;
+	bGenerationScreenOpen = false;
+	bNestVisitDismissed = false;
+	ActiveNestVisit = nullptr;
 
 	// MVP 0.2 §4: the new mosquito starts the run at Level 1 (species bonuses apply in §5).
 	if (GameSave)
