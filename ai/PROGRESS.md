@@ -131,6 +131,12 @@ Config/DefaultInput.ini             — DefaultPlayerInputClass=EnhancedPlayerIn
 
 ---
 
+## Git-авторизация (настроена 2026-09-10 — агенты не должны ловить попапы)
+- Глобально + в репо: `credential.https://github.com.provider=generic`; в репо дополнительно `credential.interactive=false` — GCM молча берёт PAT из Windows Credential Manager, окно «Select an account» не показывается.
+- Любые git-команды агентов — с `GIT_TERMINAL_PROMPT=0`: при битом креде push тихо упадёт ошибкой, а не окном.
+- Push начал падать с auth-ошибкой → обновить PAT: `cmdkey /generic:git:https://github.com /user:Akiro291 /pass:<новый-PAT>` (scope repo).
+- Откат: `git config --global --unset credential.https://github.com.provider` (+ два `--local --unset`).
+
 ## Как проверить руками (чек-лист в редакторе)
 
 1. Собрать (команда выше), открыть редактор, карта MainLevel, **Play**.
