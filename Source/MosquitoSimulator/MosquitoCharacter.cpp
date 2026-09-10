@@ -28,6 +28,7 @@
 #include "MosquitoAudio.h"
 #include "SpiderCharacter.h"
 #include "MosquitoSimulatorGameInstance.h"
+#include "MosquitoNest.h"
 
 AMosquitoCharacter::AMosquitoCharacter()
 {
@@ -795,6 +796,7 @@ void AMosquitoCharacter::Tick(float DeltaTime)
 	UpdateStats(DeltaTime);
 	DetectNearbyHumans();
 	DetectNearbySpiders();
+	DetectNearbyNests();
 
 	// Collision v5b: keep the mosquito out of the human capsule (one-way:
 	// the human is never touched). PIE-FIX #2: the separation sweep must ignore
@@ -1053,6 +1055,28 @@ void AMosquitoCharacter::DetectNearbySpiders()
 		{
 			NearestSpiderDistance = Dist;
 			NearestSpider = *It;
+		}
+	}
+}
+
+void AMosquitoCharacter::DetectNearbyNests()
+{
+	NearestNest = nullptr;
+	NearestNestDistance = TNumericLimits<float>::Max();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<AMosquitoNest> It(World); It; ++It)
+	{
+		const float Dist = FVector::Dist(GetActorLocation(), It->GetActorLocation());
+		if (Dist < NearestNestDistance)
+		{
+			NearestNestDistance = Dist;
+			NearestNest = *It;
 		}
 	}
 }

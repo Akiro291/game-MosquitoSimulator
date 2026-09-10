@@ -17,6 +17,7 @@ class UInputAction;
 class UInputMappingContext;
 class AHumanCharacter;
 class ASpiderCharacter;
+class AMosquitoNest;
 class UMosquitoSimulatorGameInstance;
 
 /**
@@ -154,6 +155,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
 	float GetNearestSpiderDistance() const { return NearestSpiderDistance; }
 
+	/** HUD nest navigation chip (distance to the closest nest, cm; Max when none). */
+	UFUNCTION(BlueprintPure, Category = "Mosquito|Life")
+	float GetNearestNestDistance() const { return NearestNestDistance; }
+
 	/** 1.0 -> 0.0 while trapped; escape at 0. */
 	UFUNCTION(BlueprintPure, Category = "Mosquito|Web")
 	float GetEscapeProgress01() const { return FMath::Clamp(EscapeMeter, 0.f, 1.f); }
@@ -222,6 +227,8 @@ protected:
 	void DetectNearbyHumans();
 	/** MVP 0.2 §1: spider proximity (same query pattern, for the counter-bite). */
 	void DetectNearbySpiders();
+	/** MVP 0.3 A: nest proximity for the navigation chip. */
+	void DetectNearbyNests();
 	/** Collision v5b - PIE fix: separates from a human with a WORLD-only manual sweep. */
 	void ResolvePawnPenetration();
 	void StickToLandedHuman();
@@ -333,6 +340,8 @@ protected:
 	float NearestHumanDistance = TNumericLimits<float>::Max();
 	TWeakObjectPtr<ASpiderCharacter> NearestSpider;
 	float NearestSpiderDistance = TNumericLimits<float>::Max();
+	TWeakObjectPtr<AMosquitoNest> NearestNest;
+	float NearestNestDistance = TNumericLimits<float>::Max();
 	bool bLoggedExhausted = false;
 	bool bLoggedStarving = false;
 

@@ -267,6 +267,20 @@ void AMosquitoHUD::DrawWebStatus(AMosquitoCharacter* Mosquito)
 		const float Y = Canvas->SizeY * 0.25f;
 		DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), X, Y, W, 20.f);
 		DrawText(Chip, FLinearColor(1.f, 0.45f, 0.2f), X + 10.f, Y + 2.f, GEngine->GetMediumFont());
+		return;
+	}
+
+	// MVP 0.3 A: navigation chip to the nest (owner PIE feedback: hard to find).
+	if (!Mosquito->HasClutchedThisRun() && Mosquito->GetNearestNestDistance() <= 900.f)
+	{
+		const FString Chip = FString::Printf(TEXT("NEST %.1f m - blood %d"),
+			Mosquito->GetNearestNestDistance() * 0.01f,
+			FMath::FloorToInt(Mosquito->GetBlood()));
+		const float W = 240.f;
+		const float X = CX - W * 0.5f;
+		const float Y = Canvas->SizeY * 0.25f;
+		DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), X, Y, W, 20.f);
+		DrawText(Chip, FLinearColor(0.5f, 1.f, 0.6f), X + 10.f, Y + 2.f, GEngine->GetMediumFont());
 	}
 }
 
